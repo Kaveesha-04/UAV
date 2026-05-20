@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UAV Telemetry Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Header -->
+        <header class="top-bar">
+            <div class="logo">
+                <span class="logo-icon">🚀</span>
+                <h1>UAV <span class="highlight">COMMAND</span></h1>
+            </div>
+            <div class="status-badges">
+                <div class="mode-selector">
+                    <select id="flight-mode" onchange="changeFlightMode()">
+                        <option value="stabilize">MODE: STABILIZE</option>
+                        <option value="althold">MODE: ALT_HOLD</option>
+                        <option value="loiter">MODE: LOITER</option>
+                        <option value="rtl">MODE: RTL</option>
+                    </select>
+                </div>
+                <div class="badge" id="conn-badge">
+                    <div class="indicator red" id="conn-indicator"></div>
+                    <span id="conn-text">SYSTEM OFFLINE</span>
+                </div>
+                <div class="badge" id="gps-badge">
+                    <span id="val-fix">NO GPS FIX</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-grid">
+            <!-- Left Column: Flight Instruments -->
+            <div class="col-left">
+                <div class="glass-panel widget-horizon">
+                    <h2>Attitude</h2>
+                    <div class="horizon-container">
+                        <div class="artificial-horizon" id="art-horizon">
+                            <div class="sky"></div>
+                            <div class="ground"></div>
+                        </div>
+                        <div class="crosshair"></div>
+                    </div>
+                    <div class="attitude-data">
+                        <div class="data-pill">R: <span id="val-roll">0.0°</span></div>
+                        <div class="data-pill">P: <span id="val-pitch">0.0°</span></div>
+                        <div class="data-pill">Y: <span id="val-yaw">0.0°</span></div>
+                    </div>
+                </div>
+
+                <div class="glass-panel widget-nav">
+                    <h2>Navigation</h2>
+                    <div class="nav-grid">
+                        <div class="nav-box">
+                            <span class="label">ALTITUDE</span>
+                            <span class="value cyan" id="val-alt">0.0m</span>
+                        </div>
+                        <div class="nav-box">
+                            <span class="label">HEADING</span>
+                            <span class="value cyan" id="val-heading">0.0°</span>
+                        </div>
+                        <div class="nav-box">
+                            <span class="label">LATITUDE</span>
+                            <span class="value" id="val-lat">0.00000</span>
+                        </div>
+                        <div class="nav-box">
+                            <span class="label">LONGITUDE</span>
+                            <span class="value" id="val-lon">0.00000</span>
+                        </div>
+                    </div> <!-- Closes nav-grid -->
+                </div> <!-- Closes widget-nav -->
+            </div> <!-- Closes col-left -->
+
+            <!-- Middle Column: Live Telemetry Graph & Map -->
+            <div class="col-main">
+                <div class="glass-panel widget-map">
+                    <h2>Live GPS Map</h2>
+                    <div id="map" style="width: 100%; height: 380px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;"></div>
+                </div>
+                
+                <div class="glass-panel widget-chart">
+                    <h2>Live Flight Data</h2>
+                    <div class="chart-container">
+                        <canvas id="telemetryChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="glass-panel widget-engine">
+                    <h2>Engine Power</h2>
+                    <div class="throttle-container">
+                        <span id="val-throttle" class="throttle-val">1000</span>
+                        <div class="progress-bg">
+                            <div class="progress-fill glow" id="throttle-bar"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: PID Tuning -->
+            <div class="col-right">
+                <div class="glass-panel widget-pid">
+                    <h2>Flight Dynamics (PIDs)</h2>
+                    
+                    <div class="pid-section">
+                        <h3>ROLL</h3>
+                        <div class="slider-group">
+                            <label>P <span id="val_r_p">1.20</span></label>
+                            <input type="range" id="pid_r_p" min="0" max="5" step="0.01" value="1.20">
+                        </div>
+                        <div class="slider-group">
+                            <label>I <span id="val_r_i">0.05</span></label>
+                            <input type="range" id="pid_r_i" min="0" max="1" step="0.01" value="0.05">
+                        </div>
+                        <div class="slider-group">
+                            <label>D <span id="val_r_d">0.01</span></label>
+                            <input type="range" id="pid_r_d" min="0" max="0.5" step="0.01" value="0.01">
+                        </div>
+                        <button class="btn-save" onclick="savePID('roll')">UPLOAD ROLL PIDs</button>
+                    </div>
+
+                    <div class="pid-section">
+                        <h3>PITCH</h3>
+                        <div class="slider-group">
+                            <label>P <span id="val_p_p">1.20</span></label>
+                            <input type="range" id="pid_p_p" min="0" max="5" step="0.01" value="1.20">
+                        </div>
+                        <div class="slider-group">
+                            <label>I <span id="val_p_i">0.05</span></label>
+                            <input type="range" id="pid_p_i" min="0" max="1" step="0.01" value="0.05">
+                        </div>
+                        <div class="slider-group">
+                            <label>D <span id="val_p_d">0.01</span></label>
+                            <input type="range" id="pid_p_d" min="0" max="0.5" step="0.01" value="0.01">
+                        </div>
+                        <button class="btn-save" onclick="savePID('pitch')">UPLOAD PITCH PIDs</button>
+                    </div>
+
+                    <div class="pid-section">
+                        <h3>YAW</h3>
+                        <div class="slider-group">
+                            <label>P <span id="val_y_p">2.00</span></label>
+                            <input type="range" id="pid_y_p" min="0" max="10" step="0.01" value="2.00">
+                        </div>
+                        <div class="slider-group">
+                            <label>I <span id="val_y_i">0.00</span></label>
+                            <input type="range" id="pid_y_i" min="0" max="1" step="0.01" value="0.00">
+                        </div>
+                        <div class="slider-group">
+                            <label>D <span id="val_y_d">0.00</span></label>
+                            <input type="range" id="pid_y_d" min="0" max="0.5" step="0.01" value="0.00">
+                        </div>
+                        <button class="btn-save" onclick="savePID('yaw')">UPLOAD YAW PIDs</button>
+                    </div>
+
+                    <button class="btn-save" style="margin-top: 20px; background: rgba(16, 185, 129, 0.2); border-color: var(--emerald); color: var(--emerald);" onclick="burnToFlash()">
+                        🔥 BURN PIDs TO FLASH MEMORY
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Calibration Row -->
+        <div class="glass-panel widget-calib" style="margin-top: 20px;">
+            <h2>System Calibration (Phase 2)</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px;">
+                
+                <!-- RC Visualizer -->
+                <div class="rc-calib">
+                    <h3>RC Transmitter (NRF24)</h3>
+                    <div class="slider-group" style="margin-bottom: 15px;">
+                        <label>THROTTLE</label>
+                        <div class="progress-bg"><div class="progress-fill blue glow" id="bar-thr" style="width: 0%;"></div></div>
+                    </div>
+                    <div class="slider-group" style="margin-bottom: 15px;">
+                        <label>YAW</label>
+                        <div class="progress-bg"><div class="progress-fill blue glow" id="bar-yaw" style="width: 50%;"></div></div>
+                    </div>
+                    <div class="slider-group" style="margin-bottom: 15px;">
+                        <label>PITCH</label>
+                        <div class="progress-bg"><div class="progress-fill blue glow" id="bar-pit" style="width: 50%;"></div></div>
+                    </div>
+                    <div class="slider-group" style="margin-bottom: 15px;">
+                        <label>ROLL</label>
+                        <div class="progress-bg"><div class="progress-fill blue glow" id="bar-rol" style="width: 50%;"></div></div>
+                    </div>
+                </div>
+
+                <!-- 3D Magnetometer Scatter -->
+                <div class="mag-calib">
+                    <h3>Magnetometer (3D Hard Iron Calibration)</h3>
+                    <div id="mag-plot" style="width: 100%; height: 350px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);"></div>
+                    <button class="btn-save" style="margin-top: 10px;" onclick="calibrateMag()">CALIBRATE & SAVE OFFSETS</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
