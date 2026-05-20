@@ -1,0 +1,19 @@
+# Node.js Web App
+Telemetry_Web_App/node_modules/
+
+# STM32 CubeIDE Build Files
+UAV Template/Debug/
+UAV Template/Release/
+**/*.elf
+**/*.bin
+**/*.hex
+**/*.map
+**/*.o
+**/*.d
+
+# ESP32 Build Files
+ESP32_Telemetry/build/
+
+# OS Files
+.DS_Store
+Thumbs.db
