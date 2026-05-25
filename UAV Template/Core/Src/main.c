@@ -1137,8 +1137,8 @@ static void BareMetal_ADC1_Init(void)
     RCC->AHB4ENR |= RCC_AHB4ENR_GPIOCEN; // Enable GPIOC clock
     RCC->AHB1ENR |= RCC_AHB1ENR_ADC12EN; // Enable ADC12 clock
 
-    // 2. Configure PC1 as Analog Mode
-    GPIOC->MODER |= GPIO_MODER_MODE1; // 11: Analog mode for Pin 1
+    // 2. Configure PC0 as Analog Mode
+    GPIOC->MODER |= GPIO_MODER_MODE0; // 11: Analog mode for Pin 0
     
     // 3. Power up ADC voltage regulator
     ADC1->CR &= ~ADC_CR_DEEPPWD; // Exit deep power down
@@ -1155,16 +1155,16 @@ static void BareMetal_ADC1_Init(void)
     ADC1->CR |= ADC_CR_ADEN; // Enable ADC
     while(!(ADC1->ISR & ADC_ISR_ADRDY)); // Wait for ready flag
     
-    // 6. Configure Channel 11 (PC1)
-    ADC1->PCSEL |= ADC_PCSEL_PCSEL_11; // Preselect channel 11
+    // 6. Configure Channel 10 (PC0)
+    ADC1->PCSEL |= ADC_PCSEL_PCSEL_10; // Preselect channel 10
     
-    // Set sampling time for channel 11 to 810.5 cycles (maximum)
-    ADC1->SMPR2 |= (7U << ADC_SMPR2_SMP11_Pos);
+    // Set sampling time for channel 10 to 810.5 cycles (maximum)
+    ADC1->SMPR2 |= (7U << ADC_SMPR2_SMP10_Pos);
     
-    // Sequence 1: Channel 11
+    // Sequence 1: Channel 10
     ADC1->SQR1 &= ~ADC_SQR1_L; // 1 conversion (L=0)
     ADC1->SQR1 &= ~ADC_SQR1_SQ1; // Clear SQ1 bits
-    ADC1->SQR1 |= (11U << ADC_SQR1_SQ1_Pos);
+    ADC1->SQR1 |= (10U << ADC_SQR1_SQ1_Pos);
 }
 
 static uint16_t BareMetal_ADC1_Read(void)
