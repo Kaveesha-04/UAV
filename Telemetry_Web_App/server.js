@@ -36,7 +36,8 @@ const tcpServer = net.createServer((socket) => {
                     // Broadcast to all connected web clients
                     io.emit('telemetry', telemetry);
                 } catch (err) {
-                    console.log("Invalid JSON:", jsonString);
+                    console.log("Invalid JSON payload received:", jsonString);
+                    console.error("JSON Parse Error:", err.message);
                 }
             }
         }

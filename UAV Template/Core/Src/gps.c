@@ -3,6 +3,10 @@
 #include <stdlib.h>
 #include <math.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846f
+#endif
+
 #define EARTH_RADIUS 6371000.0f // meters
 #define DEG_TO_RAD 0.01745329251f
 
@@ -22,9 +26,45 @@ static float NMEA_to_Decimal(float nmea_coord, char direction) {
     return decimal;
 }
 
+// Convert a single hex character to its integer value
+static int parse_hex_char(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+
+// Validate the NMEA XOR checksum
+static int validate_nmea_checksum(const char *nmea) {
+    if (nmea[0] != '$') return 0;
+    
+    int checksum = 0;
+    int i = 1;
+    // XOR all characters between '$' and '*'
+    while (nmea[i] != '*' && nmea[i] != '\0') {
+        checksum ^= nmea[i];
+        i++;
+    }
+    
+    // Check if '*' exists and has two characters following it
+    if (nmea[i] == '*' && nmea[i+1] != '\0' && nmea[i+2] != '\0') {
+        int high = parse_hex_char(nmea[i+1]);
+        int low = parse_hex_char(nmea[i+2]);
+        if (high != -1 && low != -1) {
+            return (checksum == ((high << 4) | low));
+        }
+    }
+    return 0; // Checksum invalid or missing
+}
+
 void GPS_Parse(char *nmea) {
     // Basic $GPGGA parser
     if (strncmp(nmea, "$GPGGA", 6) == 0) {
+        // 1. MUST Validate Checksum first to avoid parsing phantom coordinates from noisy UART
+        if (!validate_nmea_checksum(nmea)) {
+            return;
+        }
+
         int comma_count = 0;
         char *p = nmea;
         
@@ -49,7 +89,8 @@ void GPS_Parse(char *nmea) {
             p++;
         }
         
-        if (gps_fix > 0) {
+        // 2. MUST Ensure we actually received coordinate data (prevents overwriting with 0.0 on lost fix)
+        if (gps_fix > 0 && raw_lat != 0.0f && raw_lon != 0.0f) {
             gps_lat = NMEA_to_Decimal(raw_lat, lat_dir);
             gps_lon = NMEA_to_Decimal(raw_lon, lon_dir);
         }
@@ -64,9 +105,9 @@ float GPS_Distance(float lat1, float lon1, float lat2, float lon2) {
     lat1 = lat1 * DEG_TO_RAD;
     lat2 = lat2 * DEG_TO_RAD;
     
-    float a = sin(dLat/2) * sin(dLat/2) +
-              sin(dLon/2) * sin(dLon/2) * cos(lat1) * cos(lat2);
-    float c = 2 * atan2(sqrt(a), sqrt(1-a));
+    float a = sinf(dLat/2.0f) * sinf(dLat/2.0f) +
+              sinf(dLon/2.0f) * sinf(dLon/2.0f) * cosf(lat1) * cosf(lat2);
+    float c = 2.0f * atan2f(sqrtf(a), sqrtf(1.0f-a));
     
     return EARTH_RADIUS * c;
 }
@@ -78,10 +119,10 @@ float GPS_Bearing(float lat1, float lon1, float lat2, float lon2) {
     lat1 = lat1 * DEG_TO_RAD;
     lat2 = lat2 * DEG_TO_RAD;
     
-    float y = sin(dLon) * cos(lat2);
-    float x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
+    float y = sinf(dLon) * cosf(lat2);
+    float x = cosf(lat1) * sinf(lat2) - sinf(lat1) * cosf(lat2) * cosf(dLon);
     
-    float bearing = atan2(y, x) * (180.0f / M_PI);
+    float bearing = atan2f(y, x) * (180.0f / M_PI);
     
     if (bearing < 0) {
         bearing += 360.0f;

@@ -228,5 +228,12 @@ void OTG_FS_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+extern TIM_HandleTypeDef htim4;
+volatile uint8_t pid_loop_flag = 0;
 
+void TIM4_IRQHandler(void)
+{
+  HAL_TIM_IRQHandler(&htim4);
+  pid_loop_flag = 1;
+}
 /* USER CODE END 1 */

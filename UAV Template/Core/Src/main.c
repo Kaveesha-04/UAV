@@ -26,6 +26,10 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846f
+#endif
 #include "nrf24.h"
 #include "mpu6500.h"
 #include "bmp280.h"
@@ -176,10 +180,12 @@ static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_TIM3_Init(void);
-static void MX_SPI2_Init(void);
-static void MX_I2C1_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_SPI2_Init(void);
+static void BareMetal_ADC1_Init(void);
+static uint16_t BareMetal_ADC1_Read(void);
+static void MX_I2C1_Init(void);
+static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
 /* USER CODE BEGIN PFP */
 /* USER CODE END PFP */
@@ -209,10 +215,10 @@ char gps_parse_buffer[100];
 // Helper function to map joystick values so the exact middle is 0
 int16_t map_joystick(int16_t val, int16_t min_val, int16_t mid_val, int16_t max_val) {
     if (val <= mid_val) {
-        if (mid_val == min_val) return -500; // Prevent divide by zero
+        if (mid_val == min_val) return 0; // Prevent divide by zero and extreme inputs
         return (int16_t)((((float)(val - min_val) / (mid_val - min_val)) * 500.0f) - 500.0f);
     } else {
-        if (max_val == mid_val) return 500; // Prevent divide by zero
+        if (max_val == mid_val) return 0; // Prevent divide by zero and extreme inputs
         return (int16_t)(((float)(val - mid_val) / (max_val - mid_val)) * 500.0f);
     }
 }
@@ -286,6 +292,7 @@ int main(void)
   MX_I2C1_Init();
   MX_USART3_UART_Init();
   MX_TIM4_Init();
+  BareMetal_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
   // 1. Start Motor PWM Timers
@@ -294,14 +301,10 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
   
-  // --- AUTOMATIC ESC CALIBRATION (RUNS ON EVERY BOOT) ---
-  // 1. Send MAX throttle instantly so ESCs see it the moment they power on
-  Set_Motor_PWM(2000, 2000, 2000, 2000);
-  HAL_Delay(5000); // Wait 5 seconds for ESCs to boot and beep twice
-  
-  // 2. Send MIN throttle to finish calibration
+  // --- ESC SAFE BOOT ---
+  // Send MIN throttle to ensure ESCs arm safely on boot (prevents accidental full throttle)
   Set_Motor_PWM(1000, 1000, 1000, 1000);
-  HAL_Delay(5000); // Wait 5 seconds for confirmation beeps from ESCs
+  HAL_Delay(2000); // Wait 2 seconds for ESCs to boot and arm
 
   // 2. Initialize MPU6500
   MPU6500_Init(&hspi2);
@@ -353,9 +356,9 @@ int main(void)
   
   current_state = STATE_DISARMED; // Boot sequence finished, drone is safe
   
-  // Initialize timing
-  HAL_TIM_Base_Start(&htim4);
-  prev_time_us = __HAL_TIM_GET_COUNTER(&htim4);
+  // Initialize timing via ISR
+  HAL_TIM_Base_Start_IT(&htim4);
+  extern volatile uint8_t pid_loop_flag;
 
   /* USER CODE END 2 */
 
@@ -363,21 +366,16 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while(1)
   {
-    // 1. Calculate delta time (dt) in seconds using TIM4 for microsecond precision
-    current_time = HAL_GetTick();
-    uint16_t current_time_us = __HAL_TIM_GET_COUNTER(&htim4);
-    uint16_t delta_us;
-    
-    if (current_time_us >= prev_time_us) {
-        delta_us = current_time_us - prev_time_us;
-    } else {
-        delta_us = (65535 - prev_time_us) + current_time_us + 1;
-    }
-    
-    if (delta_us >= 4000) // Loop running at ~250Hz (4000us)
+    if (pid_loop_flag) 
     {
-        prev_time_us = current_time_us;
-        dt = delta_us / 1000000.0f;
+        pid_loop_flag = 0;
+        
+        current_time = HAL_GetTick();
+        dt = 0.004f; // Perfect 250Hz timing guaranteed by ISR
+        
+        // 1. Read Battery Voltage Early
+        uint16_t adc_val = BareMetal_ADC1_Read();
+        float battery_voltage = ((float)adc_val / 65535.0f) * 3.3f * 11.0f;
 
         // 2. Read sensor data
         MPU6500_Read_Angles(&hspi2, dt);
@@ -385,6 +383,7 @@ int main(void)
         float roll_actual = MPU6500_GetRoll();
         float pitch_actual = MPU6500_GetPitch();
         float yaw_actual = MPU6500_GetYaw();
+        float alt_actual = BMP280_GetAltitude();
 
         // --- NRF24L01 RADIO PROCESSING ---
         if (NRF_DataAvailable()) {
@@ -405,10 +404,15 @@ int main(void)
             if (joy_roll > -20 && joy_roll < 20) joy_roll = 0;
             if (joy_yaw > -20 && joy_yaw < 20) joy_yaw = 0;
 
-            // Map NRF Joystick Data to Setpoints
-            // Scale them down to reasonable angles (e.g. max 30 degrees tilt)
-            setpoint_pitch = (float)joy_pitch * (30.0f / 500.0f);
-            setpoint_roll = (float)joy_roll * (30.0f / 500.0f);
+            // Map NRF Joystick Data to Target Angles
+            float target_pitch = (float)joy_pitch * (30.0f / 500.0f);
+            float target_roll = (float)joy_roll * (30.0f / 500.0f);
+            
+            // RC Smoothing (Exponential Moving Average) for Cinematic Flight
+            // Prevents 'Derivative Kick' on sharp stick movements
+            float rc_alpha = 0.15f; 
+            setpoint_pitch += rc_alpha * (target_pitch - setpoint_pitch);
+            setpoint_roll += rc_alpha * (target_roll - setpoint_roll);
             
             // Joystick updates target heading (Max 90 deg/sec)
             setpoint_yaw += (float)joy_yaw * (90.0f / 500.0f) * dt;
@@ -420,10 +424,20 @@ int main(void)
             
             // --- FLIGHT MODE LOGIC & GEOFENCING ---
             if (current_state == STATE_ARMED) {
-                // Geofence Check (500m limit)
-                if (gps_fix > 0 && home_lat != 0.0f && current_mode != MODE_RTL) {
-                    if (GPS_Distance(home_lat, home_lon, gps_lat, gps_lon) > 500.0f) {
+                // Geofence & GPS-Loss Checks
+                if (gps_fix > 0 && home_lat != 0.0f) {
+                    float dist_from_home = GPS_Distance(home_lat, home_lon, gps_lat, gps_lon);
+                    
+                    if (dist_from_home > 1000.0f) {
+                        current_state = STATE_DISARMED; // HARD KILL: Runaway drone!
+                    } else if (dist_from_home > 500.0f && current_mode != MODE_RTL) {
                         current_mode = MODE_RTL; // GEOFENCE BREACH: FORCE RTL!
+                    }
+                } else {
+                    // GPS LOST! If flying autonomous modes, abort to AltHold soft-landing
+                    if (current_mode == MODE_AUTO || current_mode == MODE_RTL || current_mode == MODE_LOITER) {
+                        current_mode = MODE_ALTHOLD;
+                        target_altitude -= 0.5f * dt; // Start descending
                     }
                 }
 
@@ -434,24 +448,24 @@ int main(void)
                 else if (current_mode == MODE_ALTHOLD) {
                     if (!alt_hold_active) {
                         alt_hold_active = 1;
-                        target_altitude = BMP280_GetAltitude();
+                        target_altitude = alt_actual;
                     }
                     gps_hold_active = 0;
                 }
                 else if (current_mode == MODE_LOITER) {
-                    if (!alt_hold_active) { alt_hold_active = 1; target_altitude = BMP280_GetAltitude(); }
-                    if (!gps_hold_active) { gps_hold_active = 1; target_gps_lat = gps_lat; target_gps_lon = gps_lon; Reset_PID_Integrals(&pid_gps_pitch, &pid_gps_roll, &pid_gps_roll); }
+                    if (!alt_hold_active) { alt_hold_active = 1; target_altitude = alt_actual; }
+                    if (!gps_hold_active) { gps_hold_active = 1; target_gps_lat = gps_lat; target_gps_lon = gps_lon; pid_gps_pitch.integral = 0.0f; pid_gps_roll.integral = 0.0f; }
                 }
                 else if (current_mode == MODE_RTL) {
-                    if (!alt_hold_active) { alt_hold_active = 1; target_altitude = BMP280_GetAltitude(); }
+                    if (!alt_hold_active) { alt_hold_active = 1; target_altitude = alt_actual; }
                     if (!gps_hold_active || target_gps_lat != home_lat) { 
-                        gps_hold_active = 1; target_gps_lat = home_lat; target_gps_lon = home_lon; Reset_PID_Integrals(&pid_gps_pitch, &pid_gps_roll, &pid_gps_roll); 
+                        gps_hold_active = 1; target_gps_lat = home_lat; target_gps_lon = home_lon; pid_gps_pitch.integral = 0.0f; pid_gps_roll.integral = 0.0f; 
                     }
                 }
                 else if (current_mode == MODE_AUTO) {
-                    if (!alt_hold_active) { alt_hold_active = 1; target_altitude = BMP280_GetAltitude(); }
+                    if (!alt_hold_active) { alt_hold_active = 1; target_altitude = alt_actual; }
                     if (!gps_hold_active || target_gps_lat != wp_lat) { 
-                        gps_hold_active = 1; target_gps_lat = wp_lat; target_gps_lon = wp_lon; Reset_PID_Integrals(&pid_gps_pitch, &pid_gps_roll, &pid_gps_roll); 
+                        gps_hold_active = 1; target_gps_lat = wp_lat; target_gps_lon = wp_lon; pid_gps_pitch.integral = 0.0f; pid_gps_roll.integral = 0.0f; 
                     }
                 }
             } else {
@@ -542,27 +556,64 @@ int main(void)
             }
         }
         
-        // --- RADIO FAILSAFE (KILLSWITCH) ---
+        // --- SMART RADIO FAILSAFE ---
         if (current_time - last_radio_time > 500) {
             // No data received for 500ms! Connection lost.
-            current_state = STATE_FAILSAFE;
-            base_throttle = 1000.0f;
+            if (current_state == STATE_ARMED) {
+                if (gps_fix > 0 && home_lat != 0.0f) {
+                    current_mode = MODE_RTL; // Fly home safely
+                } else {
+                    current_mode = MODE_ALTHOLD;
+                    target_altitude -= 0.5f * dt; // Soft landing: slowly descend at 0.5m/s
+                }
+            } else {
+                current_state = STATE_FAILSAFE; // Disarmed, just stay failsafe
+                base_throttle = 1000.0f;
+            }
         } else if (current_state == STATE_FAILSAFE) {
             // Radio connection has recovered!
             current_state = STATE_DISARMED;
         }
 
-        // --- BUTTON ARMING LOGIC (Restored BTN_K1) ---
+        // --- STICK ARMING LOGIC (And Hardware Button Backup) ---
+        static uint32_t stick_cmd_timer = 0;
+        if (base_throttle <= 1050.0f) {
+            // Stick Arm: Throttle Down + Yaw Full Right (> 400)
+            if (nrf_data.yaw > 400 && current_state != STATE_ARMED) {
+                if (stick_cmd_timer == 0) stick_cmd_timer = current_time;
+                else if (current_time - stick_cmd_timer > 1000) { // Hold for 1 second
+                    current_state = STATE_ARMED;
+                    setpoint_yaw = yaw_actual;
+                    home_lat = gps_lat; // Lock home position
+                    home_lon = gps_lon;
+                    stick_cmd_timer = 0;
+                }
+            } 
+            // Stick Disarm: Throttle Down + Yaw Full Left (< -400)
+            else if (nrf_data.yaw < -400 && current_state == STATE_ARMED) {
+                if (stick_cmd_timer == 0) stick_cmd_timer = current_time;
+                else if (current_time - stick_cmd_timer > 1000) { // Hold for 1 second
+                    current_state = STATE_DISARMED;
+                    Reset_PID_Integrals(&pid_roll, &pid_pitch, &pid_yaw);
+                    stick_cmd_timer = 0;
+                }
+            } else {
+                stick_cmd_timer = 0;
+            }
+        } else {
+            stick_cmd_timer = 0;
+        }
+        
+        // Backup Hardware Button Arming (if joystick not available)
         if (HAL_GPIO_ReadPin(BTN_K1_GPIO_Port, BTN_K1_Pin) == GPIO_PIN_RESET) {
             if (current_time - last_button_press > 500) { // 500ms debounce
                 last_button_press = current_time;
                 
                 if (current_state == STATE_DISARMED || current_state == STATE_FAILSAFE) {
-                    // SAFETY CHECK: Only arm if throttle is at the very bottom!
                     if (base_throttle <= 1050.0f) {
                         current_state = STATE_ARMED;
-                        setpoint_yaw = yaw_actual; // Lock current heading
-                        home_lat = gps_lat; // LOCK HOME POSITION FOR GEOFENCE & RTL
+                        setpoint_yaw = yaw_actual; 
+                        home_lat = gps_lat; 
                         home_lon = gps_lon;
                     }
                 } else if (current_state == STATE_ARMED) {
@@ -573,13 +624,36 @@ int main(void)
         }
         
         // --- CRASH DETECTION (KILLSWITCH) ---
-        // ENABLED: 70-Degree Crash Detection Killswitch
         if (current_state == STATE_ARMED) {
-            if (fabs(roll_actual) > 70.0f || fabs(pitch_actual) > 70.0f) {
+            static uint32_t crash_timer = 0;
+            
+            // 1. 70-Degree Crash Detection Killswitch (Instant)
+            if (fabsf(roll_actual) > 70.0f || fabsf(pitch_actual) > 70.0f) {
                 current_state = STATE_DISARMED; // Drone flipped, kill motors immediately!
             }
+            
+            // 2. Stalled Motor / Tangled Propeller Protection
+            // If throttle is very high but drone is extremely tilted (>45 deg) for >2 seconds
+            if (base_throttle > 1500.0f && (fabsf(roll_actual) > 45.0f || fabsf(pitch_actual) > 45.0f)) {
+                if (crash_timer == 0) crash_timer = current_time;
+                else if (current_time - crash_timer > 2000) {
+                    current_state = STATE_DISARMED; // HARD KILL
+                    crash_timer = 0;
+                }
+            } else {
+                crash_timer = 0;
+            }
+            
+            // 4. Low Battery Failsafe (Bare-Metal)
+            // If under 10.2V (3.4V per cell on 3S), trigger auto-land
+            
+            // If under 10.2V (3.4V per cell on 3S), trigger auto-land
+            if (battery_voltage > 5.0f && battery_voltage < 10.2f && current_state == STATE_ARMED) {
+                current_state = STATE_FAILSAFE; // Force auto-land
+                alt_hold_active = 1;
+                target_altitude = alt_actual;
+            }
         }
-
         
         // --- LED STATUS INDICATOR ---
         if (current_state == STATE_ARMED) {
@@ -630,8 +704,8 @@ int main(void)
                     
                     // Calculate required velocity vectors (X=Forward/Pitch, Y=Right/Roll)
                     float rad_angle = relative_angle * (M_PI / 180.0f);
-                    float target_vel_x = cos(rad_angle) * dist; // Distance to move forward
-                    float target_vel_y = sin(rad_angle) * dist; // Distance to move right
+                    float target_vel_x = cosf(rad_angle) * dist; // Distance to move forward
+                    float target_vel_y = sinf(rad_angle) * dist; // Distance to move right
                     
                     // Cap maximum distance/velocity pull
                     if (target_vel_x > 10.0f) target_vel_x = 10.0f;
@@ -706,16 +780,17 @@ int main(void)
             const char* s_glat = (gps_lat < 0) ? "-" : "";
             const char* s_glon = (gps_lon < 0) ? "-" : "";
 
-            // Added PID values and raw Mag data to the outgoing JSON!
-            sprintf(uart_buf, "{\"r\":%s%d.%d,\"p\":%s%d.%d,\"y\":%s%d.%d,\"a\":%s%d.%d,\"d\":%s%d.%d,\"glat\":%s%d.%05d,\"glon\":%s%d.%05d,\"gf\":%d,\"t\":%d,\"mt\":%d,"
+            // Added PID values, raw Mag data, and Battery Voltage to the outgoing JSON!
+            sprintf(uart_buf, "{\"v\":%d.%02d,\"r\":%s%d.%d,\"p\":%s%d.%d,\"y\":%s%d.%d,\"a\":%s%d.%d,\"d\":%s%d.%d,\"glat\":%s%d.%05d,\"glon\":%s%d.%05d,\"gf\":%d,\"t\":%d,\"mt\":%d,"
                               "\"pid_r\":[%d.%02d,%d.%02d,%d.%02d],\"pid_p\":[%d.%02d,%d.%02d,%d.%02d],\"pid_y\":[%d.%02d,%d.%02d,%d.%02d],\"md\":%d,\"mx\":%d,\"my\":%d,\"mz\":%d,\"ry\":%d,\"rp\":%d,\"rr\":%d}\n", 
-                    s_r, (int)fabs(roll_actual), (int)(fabs(roll_actual) * 10) % 10,
-                    s_p, (int)fabs(pitch_actual), (int)(fabs(pitch_actual) * 10) % 10,
-                    s_y, (int)fabs(yaw_actual), (int)(fabs(yaw_actual) * 10) % 10,
-                    s_a, (int)fabs(alt), (int)(fabs(alt) * 10) % 10,
-                    s_d, (int)fabs(heading), (int)(fabs(heading) * 10) % 10,
-                    s_glat, (int)fabs(gps_lat), (int)(fabs(gps_lat) * 100000) % 100000,
-                    s_glon, (int)fabs(gps_lon), (int)(fabs(gps_lon) * 100000) % 100000,
+                    (int)battery_voltage, (int)(battery_voltage * 100) % 100,
+                    s_r, (int)fabsf(roll_actual), (int)(fabsf(roll_actual) * 10) % 10,
+                    s_p, (int)fabsf(pitch_actual), (int)(fabsf(pitch_actual) * 10) % 10,
+                    s_y, (int)fabsf(yaw_actual), (int)(fabsf(yaw_actual) * 10) % 10,
+                    s_a, (int)fabsf(alt), (int)(fabsf(alt) * 10) % 10,
+                    s_d, (int)fabsf(heading), (int)(fabsf(heading) * 10) % 10,
+                    s_glat, (int)fabsf(gps_lat), (int)(fabsf(gps_lat) * 100000) % 100000,
+                    s_glon, (int)fabsf(gps_lon), (int)(fabsf(gps_lon) * 100000) % 100000,
                     gps_fix, (int)base_throttle, mag_type,
                     (int)pid_roll.Kp, (int)(pid_roll.Kp*100)%100, (int)pid_roll.Ki, (int)(pid_roll.Ki*100)%100, (int)pid_roll.Kd, (int)(pid_roll.Kd*100)%100,
                     (int)pid_pitch.Kp, (int)(pid_pitch.Kp*100)%100, (int)pid_pitch.Ki, (int)(pid_pitch.Ki*100)%100, (int)pid_pitch.Kd, (int)(pid_pitch.Kd*100)%100,
@@ -1032,7 +1107,7 @@ static void MX_TIM4_Init(void)
   htim4.Instance = TIM4;
   htim4.Init.Prescaler = 79;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 65535;
+  htim4.Init.Period = 3999; // Generates an interrupt every 4000us (250Hz)
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
@@ -1054,6 +1129,51 @@ static void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 2 */
 
+}
+
+static void BareMetal_ADC1_Init(void)
+{
+    // 1. Enable Clocks
+    RCC->AHB4ENR |= RCC_AHB4ENR_GPIOCEN; // Enable GPIOC clock
+    RCC->AHB1ENR |= RCC_AHB1ENR_ADC12EN; // Enable ADC12 clock
+
+    // 2. Configure PC1 as Analog Mode
+    GPIOC->MODER |= GPIO_MODER_MODE1; // 11: Analog mode for Pin 1
+    
+    // 3. Power up ADC voltage regulator
+    ADC1->CR &= ~ADC_CR_DEEPPWD; // Exit deep power down
+    ADC1->CR |= ADC_CR_ADVREGEN; // Enable ADC voltage regulator
+    HAL_Delay(1); // Wait for regulator to stabilize
+    
+    // 4. Calibrate ADC
+    ADC1->CR &= ~ADC_CR_ADCALDIF; // Single-ended calibration
+    ADC1->CR |= ADC_CR_ADCAL; 
+    while(ADC1->CR & ADC_CR_ADCAL); // Wait for calibration to finish
+    
+    // 5. Enable ADC
+    ADC1->ISR |= ADC_ISR_ADRDY; // Clear ready flag
+    ADC1->CR |= ADC_CR_ADEN; // Enable ADC
+    while(!(ADC1->ISR & ADC_ISR_ADRDY)); // Wait for ready flag
+    
+    // 6. Configure Channel 11 (PC1)
+    ADC1->PCSEL |= ADC_PCSEL_PCSEL_11; // Preselect channel 11
+    
+    // Set sampling time for channel 11 to 810.5 cycles (maximum)
+    ADC1->SMPR2 |= (7U << ADC_SMPR2_SMP11_Pos);
+    
+    // Sequence 1: Channel 11
+    ADC1->SQR1 &= ~ADC_SQR1_L; // 1 conversion (L=0)
+    ADC1->SQR1 &= ~ADC_SQR1_SQ1; // Clear SQ1 bits
+    ADC1->SQR1 |= (11U << ADC_SQR1_SQ1_Pos);
+}
+
+static uint16_t BareMetal_ADC1_Read(void)
+{
+    ADC1->CR |= ADC_CR_ADSTART; // Start conversion
+    while(!(ADC1->ISR & ADC_ISR_EOC)); // Wait for End Of Conversion
+    uint16_t result = ADC1->DR; // Read Data
+    ADC1->ISR |= ADC_ISR_EOC; // Clear flag
+    return result;
 }
 
 /**

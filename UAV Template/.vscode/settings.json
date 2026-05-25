@@ -1,0 +1,5 @@
+{
+    "clangd.arguments": [
+        "--query-driver=C:/ST/STM32CubeIDE_2.0.0/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin/arm-none-eabi-gcc.exe"
+    ]
+}
