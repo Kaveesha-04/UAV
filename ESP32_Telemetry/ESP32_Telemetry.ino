@@ -3,7 +3,7 @@
 const char* ssid = "SLT-Fiber-2.4G";
 const char* password = "Nimsara1";
 
-const char* server_ip = "192.168.1.5"; // PC'S LOCAL IP ADDRESS
+const char* server_ip = "172.20.10.8"; // PC'S LOCAL IP ADDRESS (Updated automatically)
 const uint16_t server_port = 5000;
 
 WiFiClient client;
