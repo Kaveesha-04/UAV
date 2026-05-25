@@ -8,6 +8,7 @@ extern float Get_Mag_Heading(void);
 
 float Roll = 0.0f, Pitch = 0.0f, Yaw = 0.0f;
 float Filtered_Accel_X = 0.0f, Filtered_Accel_Y = 0.0f, Filtered_Accel_Z = 0.0f;
+float Filtered_Gyro_X = 0.0f, Filtered_Gyro_Y = 0.0f, Filtered_Gyro_Z = 0.0f;
 
 // --- අලුත් Offset විචල්‍යයන් ---
 float GyroX_Offset = 0, GyroY_Offset = 0, GyroZ_Offset = 0;
@@ -91,6 +92,13 @@ void MPU6500_Read_Angles(SPI_HandleTypeDef *hspi, float dt) {
     float Gy = (Gyro_Y_RAW / 65.5f) - GyroY_Offset;
     float Gz = (Gyro_Z_RAW / 65.5f) - GyroZ_Offset;
 
+    // 1.5. PT1 Low-Pass Filter for Gyro (approx 40Hz cutoff)
+    // This is CRITICAL because the PID D-term is mathematically equal to the Gyro rate!
+    float gyro_alpha = dt / (dt + 1.0f / (2.0f * M_PI * 40.0f));
+    Filtered_Gyro_X += gyro_alpha * (Gx - Filtered_Gyro_X);
+    Filtered_Gyro_Y += gyro_alpha * (Gy - Filtered_Gyro_Y);
+    Filtered_Gyro_Z += gyro_alpha * (Gz - Filtered_Gyro_Z);
+
     // 2. Accel Low-pass filter
     Filtered_Accel_X = (LPF_ALPHA * (Accel_X_RAW / 4096.0f)) + ((1.0f - LPF_ALPHA) * Filtered_Accel_X);
     Filtered_Accel_Y = (LPF_ALPHA * (Accel_Y_RAW / 4096.0f)) + ((1.0f - LPF_ALPHA) * Filtered_Accel_Y);
@@ -101,11 +109,16 @@ void MPU6500_Read_Angles(SPI_HandleTypeDef *hspi, float dt) {
     float Accel_Pitch = (atan2(-Filtered_Accel_X, sqrt(Filtered_Accel_Y*Filtered_Accel_Y + Filtered_Accel_Z*Filtered_Accel_Z)) * RAD_TO_DEG) - Accel_Pitch_Offset;
 
     // 4. Complementary Filter for Roll and Pitch
-    Roll  = 0.98f * (Roll + Gx * dt) + 0.02f * Accel_Roll;
-    Pitch = 0.98f * (Pitch + Gy * dt) + 0.02f * Accel_Pitch;
+    Roll  = 0.98f * (Roll + Filtered_Gyro_X * dt) + 0.02f * Accel_Roll;
+    Pitch = 0.98f * (Pitch + Filtered_Gyro_Y * dt) + 0.02f * Accel_Pitch;
     
     // 5. Absolute Yaw Filter using Magnetometer Heading
     extern uint8_t mag_type;
+    
+    // Safety check: Prevent infinite loop if Yaw becomes NaN or Infinity
+    if (isnan(Yaw) || isinf(Yaw)) {
+        Yaw = 0.0f;
+    }
     
     // Normalize Gyro Yaw to 0..360 range
     while (Yaw >= 360.0f) Yaw -= 360.0f;
@@ -119,10 +132,10 @@ void MPU6500_Read_Angles(SPI_HandleTypeDef *hspi, float dt) {
         else if (yaw_error < -180.0f) yaw_error += 360.0f;
         
         // Apply correction (98% Gyro, 2% Mag)
-        Yaw += (Gz * dt) + (0.02f * yaw_error);
+        Yaw += (Filtered_Gyro_Z * dt) + (0.02f * yaw_error);
     } else {
         // No magnetometer: Just integrate Gyro Z (will slowly drift)
-        Yaw += (Gz * dt);
+        Yaw += (Filtered_Gyro_Z * dt);
     }
     
     // Final normalization

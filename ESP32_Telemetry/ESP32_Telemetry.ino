@@ -26,36 +26,62 @@ void setup() {
   Serial.println("\nWiFi Connected!");
 }
 
+String stm32_buffer = "";
+String web_buffer = "";
+
 void loop() {
   // Always read from STM32 to prevent UART buffer overflow and allow USB debugging
-  if (Serial2.available()) {
-    String data = Serial2.readStringUntil('\n');
-    if (data.length() > 0) {
-      Serial.println("STM32: " + data); // ALWAYS PRINT TO USB FOR DEBUGGING
-      
-      // If connected to Node.js, send it over Wi-Fi
-      if (client.connected()) {
-        client.println(data);
+  while (Serial2.available()) {
+    char c = Serial2.read();
+    if (c == '\n') {
+      if (stm32_buffer.length() > 0) {
+        Serial.println("STM32: " + stm32_buffer); // ALWAYS PRINT TO USB FOR DEBUGGING
+        if (client.connected()) {
+          client.println(stm32_buffer);
+        }
+        stm32_buffer = "";
+      }
+    } else if (c != '\r') {
+      if (stm32_buffer.length() < 512) {
+        stm32_buffer += c;
+      } else {
+        stm32_buffer = ""; // Prevent Out-of-Memory crash if STM32 drops newline
       }
     }
   }
 
   // Read incoming commands from Node.js (Web Dashboard) and forward to STM32
-  if (client.available()) {
-    String incoming = client.readStringUntil('\n');
-    if (incoming.length() > 0) {
-      Serial.println("From Web: " + incoming); // Print to USB for debugging
-      Serial2.println(incoming); // Send to STM32 over UART2
+  while (client.available()) {
+    char c = client.read();
+    if (c == '\n') {
+      if (web_buffer.length() > 0) {
+        Serial.println("From Web: " + web_buffer); // Print to USB for debugging
+        Serial2.println(web_buffer); // Send to STM32 over UART2
+        web_buffer = "";
+      }
+    } else if (c != '\r') {
+      if (web_buffer.length() < 512) {
+        web_buffer += c;
+      } else {
+        web_buffer = ""; // Prevent Out-of-Memory crash
+      }
     }
   }
 
-  // Manage TCP Connection (non-blocking style check)
+  // Manage TCP and WiFi Connection
   static unsigned long last_connect_attempt = 0;
-  if (!client.connected() && millis() - last_connect_attempt > 2000) {
+  if (millis() - last_connect_attempt > 2000) {
     last_connect_attempt = millis();
-    Serial.println("Connecting to TCP Server (" + String(server_ip) + ")...");
-    if (client.connect(server_ip, server_port)) {
-      Serial.println("Connected to Node.js Backend!");
+    
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi Disconnected. Reconnecting...");
+      WiFi.disconnect();
+      WiFi.begin(ssid, password);
+    } else if (!client.connected()) {
+      Serial.println("Connecting to TCP Server (" + String(server_ip) + ")...");
+      if (client.connect(server_ip, server_port)) {
+        Serial.println("Connected to Node.js Backend!");
+      }
     }
   }
 }

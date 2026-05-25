@@ -16,19 +16,29 @@ float PID_Compute(PID_Controller *pid, float setpoint, float measured, float dt)
     // Proportional term
     float P_out = pid->Kp * error;
     
-    // Integral term with Anti-Windup (very important for drones!)
-    pid->integral += error * dt;
+    // Derivative term
+    float derivative = (error - pid->prev_error) / dt;
+    float D_out = pid->Kd * derivative;
     
-    // Clamp the integral to prevent it from growing infinitely while on the ground
+    // Dynamic Anti-Windup (Conditional Integration)
+    // Check if output is saturated and error is pushing in the same direction
+    float current_output = P_out + (pid->Ki * pid->integral) + D_out;
+    uint8_t saturated = 0;
+    
+    if (current_output >= pid->out_max && error > 0.0f) saturated = 1;
+    if (current_output <= pid->out_min && error < 0.0f) saturated = 1;
+    
+    // Only integrate if not saturated
+    if (!saturated) {
+        pid->integral += error * dt;
+    }
+    
+    // Clamp the integral as a final safety net
     float i_max = 400.0f; 
     if(pid->integral > i_max) pid->integral = i_max;
     else if(pid->integral < -i_max) pid->integral = -i_max;
     
     float I_out = pid->Ki * pid->integral;
-    
-    // Derivative term
-    float derivative = (error - pid->prev_error) / dt;
-    float D_out = pid->Kd * derivative;
     
     // Total output
     float output = P_out + I_out + D_out;
@@ -54,17 +64,30 @@ float PID_Compute_Angular(PID_Controller *pid, float setpoint, float measured, f
     // Proportional term
     float P_out = pid->Kp * error;
     
-    // Integral term with Anti-Windup
-    pid->integral += error * dt;
+    // Derivative term (shortest path wrap-around)
+    float diff = error - pid->prev_error;
+    if (diff > 180.0f) diff -= 360.0f;
+    else if (diff < -180.0f) diff += 360.0f;
+    float derivative = diff / dt;
+    float D_out = pid->Kd * derivative;
+    
+    // Dynamic Anti-Windup (Conditional Integration)
+    float current_output = P_out + (pid->Ki * pid->integral) + D_out;
+    uint8_t saturated = 0;
+    
+    if (current_output >= pid->out_max && error > 0.0f) saturated = 1;
+    if (current_output <= pid->out_min && error < 0.0f) saturated = 1;
+    
+    if (!saturated) {
+        pid->integral += error * dt;
+    }
+    
+    // Hard clamp just in case
     float i_max = 400.0f; 
     if(pid->integral > i_max) pid->integral = i_max;
     else if(pid->integral < -i_max) pid->integral = -i_max;
     
     float I_out = pid->Ki * pid->integral;
-    
-    // Derivative term
-    float derivative = (error - pid->prev_error) / dt;
-    float D_out = pid->Kd * derivative;
     
     // Total output
     float output = P_out + I_out + D_out;
