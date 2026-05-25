@@ -3,7 +3,7 @@
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
 
-const char* server_ip = "192.168.1.5"; // PC'S LOCAL IP ADDRESS
+const char* server_ip = "YOUR_PC_LOCAL_IP"; // PC'S LOCAL IP ADDRESS (Updated automatically)
 const uint16_t server_port = 5000;
 
 WiFiClient client;

@@ -190,6 +190,33 @@ char gps_parse_buffer[100];
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+// --- JOYSTICK CALIBRATION SETTINGS ---
+// If your transmitter sends 0-1023, the middle is usually around 512.
+// Adjust the _MID values to whatever your transmitter sends when the sticks are perfectly centered.
+#define JOY_PITCH_MIN 0
+#define JOY_PITCH_MID 512
+#define JOY_PITCH_MAX 1023
+
+#define JOY_ROLL_MIN 0
+#define JOY_ROLL_MID 512
+#define JOY_ROLL_MAX 1023
+
+#define JOY_YAW_MIN 0
+#define JOY_YAW_MID 512
+#define JOY_YAW_MAX 1023
+
+// Helper function to map joystick values so the exact middle is 0
+int16_t map_joystick(int16_t val, int16_t min_val, int16_t mid_val, int16_t max_val) {
+    if (val <= mid_val) {
+        if (mid_val == min_val) return -500; // Prevent divide by zero
+        return (int16_t)((((float)(val - min_val) / (mid_val - min_val)) * 500.0f) - 500.0f);
+    } else {
+        if (max_val == mid_val) return 500; // Prevent divide by zero
+        return (int16_t)(((float)(val - mid_val) / (max_val - mid_val)) * 500.0f);
+    }
+}
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART3) {
         if (gps_rx_data != '\n' && gps_rx_data != '\r' && gps_buf_index < 99) {
@@ -364,10 +391,16 @@ int main(void)
             NRF_ReadPayload(&nrf_data, sizeof(nrf_data));
             last_radio_time = current_time;
             
-            // Add deadbands to joystick inputs (±20) to prevent drift
+            // Map raw joystick values to -500 to 500 range IN PLACE so telemetry also gets centered values
+            nrf_data.pitch = map_joystick(nrf_data.pitch, JOY_PITCH_MIN, JOY_PITCH_MID, JOY_PITCH_MAX);
+            nrf_data.roll  = map_joystick(nrf_data.roll, JOY_ROLL_MIN, JOY_ROLL_MID, JOY_ROLL_MAX);
+            nrf_data.yaw   = map_joystick(nrf_data.yaw, JOY_YAW_MIN, JOY_YAW_MID, JOY_YAW_MAX);
+
             int16_t joy_pitch = nrf_data.pitch;
             int16_t joy_roll = nrf_data.roll;
             int16_t joy_yaw = nrf_data.yaw;
+
+            // Add deadbands to mapped joystick inputs (±20) to prevent drift
             if (joy_pitch > -20 && joy_pitch < 20) joy_pitch = 0;
             if (joy_roll > -20 && joy_roll < 20) joy_roll = 0;
             if (joy_yaw > -20 && joy_yaw < 20) joy_yaw = 0;
