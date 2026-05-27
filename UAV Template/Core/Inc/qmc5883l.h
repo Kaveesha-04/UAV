@@ -6,4 +6,7 @@
 void QMC5883L_Init(I2C_HandleTypeDef *hi2c);
 void QMC5883L_Read(I2C_HandleTypeDef *hi2c);
 
+void QMC5883P_Init(I2C_HandleTypeDef *hi2c);
+void QMC5883P_Read(I2C_HandleTypeDef *hi2c);
+
 #endif

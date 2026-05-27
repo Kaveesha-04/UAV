@@ -29,6 +29,10 @@
                         <option value="rtl">MODE: RTL</option>
                     </select>
                 </div>
+                <div class="mode-selector" style="display: flex; gap: 5px;">
+                    <button class="btn-save" style="background: rgba(16, 185, 129, 0.2); border-color: var(--emerald); color: var(--emerald); padding: 5px 15px; margin: 0; min-width: 80px;" onclick="toggleArm(1)">ARM</button>
+                    <button class="btn-save" style="background: rgba(244, 63, 94, 0.2); border-color: var(--rose); color: var(--rose); padding: 5px 15px; margin: 0; min-width: 80px;" onclick="toggleArm(0)">DISARM</button>
+                </div>
                 <div class="badge" id="conn-badge">
                     <div class="indicator red" id="conn-indicator"></div>
                     <span id="conn-text">SYSTEM OFFLINE</span>
@@ -178,19 +182,19 @@
                 <div class="rc-calib">
                     <h3>RC Transmitter (NRF24)</h3>
                     <div class="slider-group" style="margin-bottom: 15px;">
-                        <label>THROTTLE</label>
+                        <label>THROTTLE <span id="val-rc-thr" style="float: right; color: var(--cyan); font-weight: 600;">1000</span></label>
                         <div class="progress-bg"><div class="progress-fill blue glow" id="bar-thr" style="width: 0%;"></div></div>
                     </div>
                     <div class="slider-group" style="margin-bottom: 15px;">
-                        <label>YAW</label>
+                        <label>YAW <span id="val-rc-yaw" style="float: right; color: var(--cyan); font-weight: 600;">0</span></label>
                         <div class="progress-bg"><div class="progress-fill blue glow" id="bar-yaw" style="width: 50%;"></div></div>
                     </div>
                     <div class="slider-group" style="margin-bottom: 15px;">
-                        <label>PITCH</label>
+                        <label>PITCH <span id="val-rc-pit" style="float: right; color: var(--cyan); font-weight: 600;">0</span></label>
                         <div class="progress-bg"><div class="progress-fill blue glow" id="bar-pit" style="width: 50%;"></div></div>
                     </div>
                     <div class="slider-group" style="margin-bottom: 15px;">
-                        <label>ROLL</label>
+                        <label>ROLL <span id="val-rc-rol" style="float: right; color: var(--cyan); font-weight: 600;">0</span></label>
                         <div class="progress-bg"><div class="progress-fill blue glow" id="bar-rol" style="width: 50%;"></div></div>
                     </div>
                 </div>
