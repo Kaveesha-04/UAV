@@ -62,6 +62,16 @@ function burnToFlash() {
     alert("Flash Command Sent! PIDs are now permanently saved.");
 }
 
+function toggleArm(state) {
+    if (state === 1) {
+        if (confirm("WARNING: Are you sure you want to ARM the drone? Propellers may spin!")) {
+            socket.emit('toggle_arm', { arm: 1 });
+        }
+    } else {
+        socket.emit('toggle_arm', { arm: 0 });
+    }
+}
+
 // Magnetometer 3D Calibration
 let magX_data = []; let magY_data = []; let magZ_data = [];
 let magPlotInitialized = false;
@@ -159,6 +169,7 @@ socket.on('telemetry', (data) => {
             droneMarker.setLatLng(newLatLng);
             if (!mapInitialized) {
                 map.setView(newLatLng, 17); // Zoom in when first fix acquired
+                setTimeout(() => map.invalidateSize(), 500);
                 mapInitialized = true;
             }
         }
@@ -201,11 +212,27 @@ socket.on('telemetry', (data) => {
         if(magX_data.length > 300) { magX_data.shift(); magY_data.shift(); magZ_data.shift(); }
     }
     
-    // RC Transmitter Progress Bars (Width percentage)
-    if (data.ry !== undefined) { let pct = (data.ry + 500) / 10; document.getElementById('bar-yaw').style.width = Math.max(0, Math.min(100, pct)) + "%"; }
-    if (data.rp !== undefined) { let pct = (data.rp + 500) / 10; document.getElementById('bar-pit').style.width = Math.max(0, Math.min(100, pct)) + "%"; }
-    if (data.rr !== undefined) { let pct = (data.rr + 500) / 10; document.getElementById('bar-rol').style.width = Math.max(0, Math.min(100, pct)) + "%"; }
-    if (data.t !== undefined) { let pct = ((data.t - 1000) / 10); document.getElementById('bar-thr').style.width = Math.max(0, Math.min(100, pct)) + "%"; }
+    // RC Transmitter Progress Bars (Width percentage) and Raw Values
+    if (data.ry !== undefined) { 
+        let pct = (data.ry + 500) / 10; 
+        document.getElementById('bar-yaw').style.width = Math.max(0, Math.min(100, pct)) + "%"; 
+        document.getElementById('val-rc-yaw').innerText = data.ry;
+    }
+    if (data.rp !== undefined) { 
+        let pct = (data.rp + 500) / 10; 
+        document.getElementById('bar-pit').style.width = Math.max(0, Math.min(100, pct)) + "%"; 
+        document.getElementById('val-rc-pit').innerText = data.rp;
+    }
+    if (data.rr !== undefined) { 
+        let pct = (data.rr + 500) / 10; 
+        document.getElementById('bar-rol').style.width = Math.max(0, Math.min(100, pct)) + "%"; 
+        document.getElementById('val-rc-rol').innerText = data.rr;
+    }
+    if (data.t !== undefined) { 
+        let pct = ((data.t - 1000) / 10); 
+        document.getElementById('bar-thr').style.width = Math.max(0, Math.min(100, pct)) + "%"; 
+        document.getElementById('val-rc-thr').innerText = data.t;
+    }
     
     // Auto-populate PID Sliders on first load
     if (!pidInitialized && data.pid_r && data.pid_p && data.pid_y) {
@@ -214,7 +241,9 @@ socket.on('telemetry', (data) => {
             document.getElementById(`pid_${axis}_i`).value = i; document.getElementById(`val_${axis}_i`).innerText = i.toFixed(2);
             document.getElementById(`pid_${axis}_d`).value = d; document.getElementById(`val_${axis}_d`).innerText = d.toFixed(2);
         };
-        setPID('r', data.pid_r[0] + (data.pid_r[1]/100), data.pid_r[2] + (data.pid_r[3]/100), data.pid_r[4] + (data.pid_r[5]/100)); // The STM32 sends array like [1,20, 0,5, 0,1] for 1.20, 0.05, 0.01
+        setPID('r', data.pid_r[0], data.pid_r[1], data.pid_r[2]);
+        setPID('p', data.pid_p[0], data.pid_p[1], data.pid_p[2]);
+        setPID('y', data.pid_y[0], data.pid_y[1], data.pid_y[2]);
         
         pidInitialized = true;
     }

@@ -53,55 +53,103 @@ const tcpServer = net.createServer((socket) => {
     });
 });
 
+const { SerialPort } = require('serialport');
+const { ReadlineParser } = require('@serialport/parser-readline');
+
 tcpServer.listen(TCP_PORT, '0.0.0.0', () => {
-    console.log(`TCP Server listening for ESP32 on port ${TCP_PORT}`);
+    console.log(`[WIFI] TCP Server listening for ESP32 on port ${TCP_PORT}`);
 });
+
+// ==========================================
+// USB SERIAL FALLBACK (Plug and Play)
+// ==========================================
+let activeSerialPort = null;
+
+async function connectToSTM32Serial() {
+    try {
+        const ports = await SerialPort.list();
+        // Look for STMicroelectronics Virtual COM Port (Vendor ID 0483)
+        const stmPortInfo = ports.find(p => p.vendorId && p.vendorId.toUpperCase() === '0483');
+        
+        if (stmPortInfo) {
+            console.log(`[USB] Found STM32 on ${stmPortInfo.path}. Connecting...`);
+            activeSerialPort = new SerialPort({ path: stmPortInfo.path, baudRate: 115200 });
+            const parser = activeSerialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
+
+            parser.on('data', (jsonString) => {
+                if (jsonString.trim().length > 0) {
+                    try {
+                        const telemetry = JSON.parse(jsonString.trim());
+                        // Only broadcast USB data if ESP32 is NOT currently connected
+                        if (!activeEspSocket) {
+                            io.emit('telemetry', telemetry);
+                        }
+                    } catch (err) {
+                        // Ignore parse errors (partial frames)
+                    }
+                }
+            });
+
+            activeSerialPort.on('close', () => {
+                console.log(`[USB] STM32 disconnected.`);
+                activeSerialPort = null;
+                setTimeout(connectToSTM32Serial, 3000); // Try to reconnect
+            });
+
+            activeSerialPort.on('error', (err) => {
+                console.log(`[USB] Error: ${err.message}`);
+                activeSerialPort = null;
+                setTimeout(connectToSTM32Serial, 3000);
+            });
+        } else {
+            // Check again in 3 seconds
+            setTimeout(connectToSTM32Serial, 3000);
+        }
+    } catch (e) {
+        setTimeout(connectToSTM32Serial, 3000);
+    }
+}
+connectToSTM32Serial();
 
 // WebSocket Handling
 io.on('connection', (wsSocket) => {
     console.log('Web Dashboard Client Connected');
     
-    wsSocket.on('tune_pid', (data) => {
+    function sendCommandToDrone(cmd) {
         if (activeEspSocket) {
-            // Format to CSV: P,roll,1.20,0.05,0.01\n
-            const cmd = `P,${data.axis},${data.p},${data.i},${data.d}\n`;
-            console.log('Sending to ESP32:', cmd.trim());
+            console.log('[WIFI] Sending to ESP32:', cmd.trim());
             activeEspSocket.write(cmd);
+        } else if (activeSerialPort) {
+            console.log('[USB] Sending to STM32:', cmd.trim());
+            activeSerialPort.write(cmd);
         } else {
-            console.log('Cannot send PID - ESP32 not connected!');
+            console.log('[ERROR] Cannot send command - No drone connected (WiFi or USB)!');
         }
+    }
+
+    wsSocket.on('tune_pid', (data) => {
+        // Format to CSV: P,roll,1.20,0.05,0.01\n
+        sendCommandToDrone(`P,${data.axis},${data.p},${data.i},${data.d}\n`);
     });
 
     wsSocket.on('send_waypoint', (data) => {
-        if (activeEspSocket) {
-            const cmd = `W,${data.lat},${data.lon}\n`;
-            console.log('Sending Waypoint to ESP32:', cmd.trim());
-            activeEspSocket.write(cmd);
-        }
+        sendCommandToDrone(`W,${data.lat},${data.lon}\n`);
     });
 
     wsSocket.on('set_mode', (data) => {
-        if (activeEspSocket) {
-            const cmd = `M,${data.mode}\n`;
-            console.log('Sending Flight Mode to ESP32:', cmd.trim());
-            activeEspSocket.write(cmd);
-        }
+        sendCommandToDrone(`M,${data.mode}\n`);
     });
 
     wsSocket.on('save_pid', () => {
-        if (activeEspSocket) {
-            const cmd = `B\n`;
-            console.log('Sending Burn to Flash Command to ESP32:', cmd.trim());
-            activeEspSocket.write(cmd);
-        }
+        sendCommandToDrone(`B\n`);
+    });
+
+    wsSocket.on('toggle_arm', (data) => {
+        sendCommandToDrone(`A,${data.arm}\n`);
     });
 
     wsSocket.on('calibrate_mag', (data) => {
-        if (activeEspSocket) {
-            const cmd = `C,${data.x},${data.y},${data.z}\n`;
-            console.log('Sending Mag Offsets to ESP32:', cmd.trim());
-            activeEspSocket.write(cmd);
-        }
+        sendCommandToDrone(`C,${data.x},${data.y},${data.z}\n`);
     });
 });
 

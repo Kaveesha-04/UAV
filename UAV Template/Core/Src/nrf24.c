@@ -57,11 +57,11 @@ void NRF_Init_RX(void) {
     // Explicitly set Address Width to 5 bytes
     NRF_Write_Reg(0x03, 0x03); 
 
-    // Set RF Channel to 115
-    NRF_Write_Reg(NRF_RF_CH, 115);
+    // Set RF Channel to 76 (Default Arduino RF24 Channel)
+    NRF_Write_Reg(NRF_RF_CH, 76);
     
-    // Set Data Rate 1Mbps, Power 0dBm
-    NRF_Write_Reg(NRF_RF_SETUP, 0x06);
+    // Set Data Rate 2Mbps, Power 0dBm
+    NRF_Write_Reg(NRF_RF_SETUP, 0x0E);
     
     // Set Payload Size for Pipe 0 (8 Bytes)
     NRF_Write_Reg(NRF_RX_PW_P0, sizeof(struct Data_Package));
@@ -72,12 +72,15 @@ void NRF_Init_RX(void) {
     // Enable RX Address on Pipe 0
     NRF_Write_Reg(NRF_EN_RXADDR, 0x01);
 
-    // Set RX Address to "EEEEE" (Mirrored to prevent Endianness bugs!)
-    uint8_t rx_addr[5] = {'E', 'E', 'E', 'E', 'E'};
+    // Set RX Address to "00001" (Matches old working ESP32 code)
+    uint8_t rx_addr[5] = {'0', '0', '0', '0', '1'};
     NRF_Write_Buf(0x0A, rx_addr, 5); // 0x0A is NRF_RX_ADDR_P0
     
     // Config: CRC 2-byte, Power UP, PRX (Primary Receiver)
     NRF_Write_Reg(NRF_CONFIG, 0x0F);
+    
+    // Wait for Oscillator to stabilize (Max 1.5ms from Power Down)
+    HAL_Delay(2);
     
     // Start Listening
     CE_Enable();

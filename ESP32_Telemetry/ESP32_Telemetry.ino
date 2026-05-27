@@ -9,9 +9,10 @@ const uint16_t server_port = 5000;
 WiFiClient client;
 
 // Pins are physically soldered: STM32 PA2 -> ESP32 D17, STM32 PA3 -> ESP32 D18
-// We have swapped the pins in software on BOTH sides!
-#define RXD2 17
-#define TXD2 18
+// Since the STM32 software already swapped them, we must NOT swap them here!
+// D17 must be TX (to match STM32 PA2 RX), and D18 must be RX (to match STM32 PA3 TX).
+#define RXD2 18
+#define TXD2 17
 
 void setup() {
   Serial.begin(115200);

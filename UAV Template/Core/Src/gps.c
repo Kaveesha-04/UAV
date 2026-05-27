@@ -58,8 +58,8 @@ static int validate_nmea_checksum(const char *nmea) {
 }
 
 void GPS_Parse(char *nmea) {
-    // Basic $GPGGA parser
-    if (strncmp(nmea, "$GPGGA", 6) == 0) {
+    // Basic $GPGGA and $GNGGA parser
+    if (strncmp(nmea, "$GPGGA", 6) == 0 || strncmp(nmea, "$GNGGA", 6) == 0) {
         // 1. MUST Validate Checksum first to avoid parsing phantom coordinates from noisy UART
         if (!validate_nmea_checksum(nmea)) {
             return;
