@@ -152,9 +152,7 @@ io.on('connection', (wsSocket) => {
         sendCommandToDrone(`C,${data.x},${data.y},${data.z}\n`);
     });
 
-    wsSocket.on('test_motor', (data) => {
-        sendCommandToDrone(`T,${data.id}\n`);
-    });
+
 });
 
 // Start Web Server
