@@ -970,7 +970,7 @@ int main(void) {
         motor4 = 1000;
         
         // --- MOTOR DIAGNOSTICS LOGIC ---
-        if (current_state == STATE_DISARMED && test_motor_id > 0) {
+        if (current_state != STATE_ARMED && test_motor_id > 0) {
             if (current_time - test_motor_start_time < 2000) { // Spin for 2 seconds
                 if (test_motor_id == 1) motor1 = 1100;
                 else if (test_motor_id == 2) motor2 = 1100;
