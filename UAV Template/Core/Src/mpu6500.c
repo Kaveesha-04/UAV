@@ -99,10 +99,31 @@ void MPU6500_Read_Angles(SPI_HandleTypeDef *hspi, float dt) {
     Filtered_Gyro_Y += gyro_alpha * (Gy - Filtered_Gyro_Y);
     Filtered_Gyro_Z += gyro_alpha * (Gz - Filtered_Gyro_Z);
 
+    // 1.8. Centrifugal Force Compensation for Off-Center IMU
+    // Convert filtered gyro rates from deg/s to rad/s
+    float w_x = Filtered_Gyro_X * (M_PI / 180.0f);
+    float w_y = Filtered_Gyro_Y * (M_PI / 180.0f);
+    float w_z = Filtered_Gyro_Z * (M_PI / 180.0f);
+
+    // Cross product: v = w x r
+    float v_x = (w_y * IMU_OFFSET_Z) - (w_z * IMU_OFFSET_Y);
+    float v_y = (w_z * IMU_OFFSET_X) - (w_x * IMU_OFFSET_Z);
+    float v_z = (w_x * IMU_OFFSET_Y) - (w_y * IMU_OFFSET_X);
+
+    // Cross product: a_c = w x v (Centrifugal acceleration in m/s^2)
+    float ac_x = (w_y * v_z) - (w_z * v_y);
+    float ac_y = (w_z * v_x) - (w_x * v_z);
+    float ac_z = (w_x * v_y) - (w_y * v_x);
+
+    // Convert raw accel to Gs, then subtract compensation (converted from m/s^2 to Gs)
+    float ax_comp = (Accel_X_RAW / 4096.0f) - (ac_x / 9.81f);
+    float ay_comp = (Accel_Y_RAW / 4096.0f) - (ac_y / 9.81f);
+    float az_comp = (Accel_Z_RAW / 4096.0f) - (ac_z / 9.81f);
+
     // 2. Accel Low-pass filter
-    Filtered_Accel_X = (LPF_ALPHA * (Accel_X_RAW / 4096.0f)) + ((1.0f - LPF_ALPHA) * Filtered_Accel_X);
-    Filtered_Accel_Y = (LPF_ALPHA * (Accel_Y_RAW / 4096.0f)) + ((1.0f - LPF_ALPHA) * Filtered_Accel_Y);
-    Filtered_Accel_Z = (LPF_ALPHA * (Accel_Z_RAW / 4096.0f)) + ((1.0f - LPF_ALPHA) * Filtered_Accel_Z);
+    Filtered_Accel_X = (LPF_ALPHA * ax_comp) + ((1.0f - LPF_ALPHA) * Filtered_Accel_X);
+    Filtered_Accel_Y = (LPF_ALPHA * ay_comp) + ((1.0f - LPF_ALPHA) * Filtered_Accel_Y);
+    Filtered_Accel_Z = (LPF_ALPHA * az_comp) + ((1.0f - LPF_ALPHA) * Filtered_Accel_Z);
 
     // 3. Accel කෝණ සොයා Offset එක අඩු කිරීම
     float Accel_Roll  = (atan2(Filtered_Accel_Y, Filtered_Accel_Z) * RAD_TO_DEG) - Accel_Roll_Offset;

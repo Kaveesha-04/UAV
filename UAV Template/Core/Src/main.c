@@ -25,6 +25,7 @@
 #include "usbd_cdc_if.h" // USB හරහා දත්ත යැවීමට අවශ්‍ය file එක
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 
@@ -169,6 +170,9 @@ typedef enum {
 
 Flight_Mode current_mode = MODE_STABILIZE;
 
+// Motor Diagnostics
+uint8_t test_motor_id = 0;
+uint32_t test_motor_start_time = 0;
 // Home and Waypoint Coordinates
 float home_lat = 0.0f;
 float home_lon = 0.0f;
@@ -558,24 +562,27 @@ int main(void) {
 
         // Format P: P,roll,1.20,0.05,0.01,0.00
         if (esp_buffer[0] == 'P') {
-          char axis[10];
-          float p, i, d, f;
-          if (sscanf(esp_buffer, "P,%[^,],%f,%f,%f,%f", axis, &p, &i, &d, &f) == 5) {
-            if (strcmp(axis, "roll") == 0) {
-              pid_roll.Kp = p;
-              pid_roll.Ki = i;
-              pid_roll.Kd = d;
-              pid_roll.Kf = f;
-            } else if (strcmp(axis, "pitch") == 0) {
-              pid_pitch.Kp = p;
-              pid_pitch.Ki = i;
-              pid_pitch.Kd = d;
-              pid_pitch.Kf = f;
-            } else if (strcmp(axis, "yaw") == 0) {
-              pid_yaw.Kp = p;
-              pid_yaw.Ki = i;
-              pid_yaw.Kd = d;
-              pid_yaw.Kf = f;
+          char* token = strtok((char*)esp_buffer, ",");
+          if (token != NULL && token[0] == 'P') {
+            char* axis = strtok(NULL, ",");
+            char* p_str = strtok(NULL, ",");
+            char* i_str = strtok(NULL, ",");
+            char* d_str = strtok(NULL, ",");
+            char* f_str = strtok(NULL, "\n");
+            
+            if (axis && p_str && i_str && d_str && f_str) {
+              float p = atof(p_str);
+              float i = atof(i_str);
+              float d = atof(d_str);
+              float f = atof(f_str);
+              
+              if (strcmp(axis, "roll") == 0) {
+                pid_roll.Kp = p; pid_roll.Ki = i; pid_roll.Kd = d; pid_roll.Kf = f;
+              } else if (strcmp(axis, "pitch") == 0) {
+                pid_pitch.Kp = p; pid_pitch.Ki = i; pid_pitch.Kd = d; pid_pitch.Kf = f;
+              } else if (strcmp(axis, "yaw") == 0) {
+                pid_yaw.Kp = p; pid_yaw.Ki = i; pid_yaw.Kd = d; pid_yaw.Kf = f;
+              }
             }
           }
         }
@@ -595,12 +602,15 @@ int main(void) {
         }
         // Format W: W,6.92710,79.86120
         else if (esp_buffer[0] == 'W') {
-          float t_lat, t_lon;
-          if (sscanf(esp_buffer, "W,%f,%f", &t_lat, &t_lon) == 2) {
-            wp_lat = t_lat;
-            wp_lon = t_lon;
-            current_mode =
-                MODE_AUTO; // Automatically switch to Waypoint navigation mode!
+          char* token = strtok((char*)esp_buffer, ",");
+          if (token != NULL && token[0] == 'W') {
+            char* lat_str = strtok(NULL, ",");
+            char* lon_str = strtok(NULL, "\n");
+            if (lat_str && lon_str) {
+              wp_lat = atof(lat_str);
+              wp_lon = atof(lon_str);
+              current_mode = MODE_AUTO; // Automatically switch to Waypoint navigation mode!
+            }
           }
         }
         // Format A: A,1 (Arm) or A,0 (Disarm)
@@ -617,6 +627,16 @@ int main(void) {
               // Force disarm
               current_state = STATE_DISARMED;
               Reset_PID_Integrals(&pid_roll, &pid_pitch, &pid_yaw);
+            }
+          }
+        }
+        // Format T: T,1 (Test Motor 1)
+        else if (esp_buffer[0] == 'T') {
+          int m_id;
+          if (sscanf(esp_buffer, "T,%d", &m_id) == 1) {
+            if (current_state != STATE_ARMED) { // ONLY IF DISARMED
+              test_motor_id = m_id;
+              test_motor_start_time = current_time;
             }
           }
         }
@@ -642,11 +662,15 @@ int main(void) {
         }
         // Format C: C,mag_x,mag_y,mag_z (Update Offsets)
         else if (esp_buffer[0] == 'C') {
-          float ox, oy, oz;
-          if (sscanf(esp_buffer, "C,%f,%f,%f", &ox, &oy, &oz) == 3) {
-            mag_offset_x = ox;
-            mag_offset_y = oy;
-            mag_offset_z = oz;
+          char* token = strtok((char*)esp_buffer, ",");
+          if (token != NULL && token[0] == 'C') {
+            char* ox_str = strtok(NULL, ",");
+            char* oy_str = strtok(NULL, ",");
+            char* oz_str = strtok(NULL, "\n");
+            if (ox_str && oy_str && oz_str) {
+              mag_offset_x = atof(ox_str);
+              mag_offset_y = atof(oy_str);
+              mag_offset_z = atof(oz_str);
 
             // Automatically burn to Flash memory too!
             Flash_Data fd;
@@ -666,6 +690,7 @@ int main(void) {
             fd.mag_offset_y = mag_offset_y;
             fd.mag_offset_z = mag_offset_z;
             Flash_Save(&fd);
+            }
           }
         }
       }
@@ -889,14 +914,11 @@ int main(void) {
             throttle_output = idle_speed;
           }
 
-          float m1 =
-              throttle_output - pid_out_roll + pid_out_pitch - pid_out_yaw;
-          float m2 =
-              throttle_output - pid_out_roll - pid_out_pitch + pid_out_yaw;
-          float m3 =
-              throttle_output + pid_out_roll - pid_out_pitch - pid_out_yaw;
-          float m4 =
-              throttle_output + pid_out_roll + pid_out_pitch + pid_out_yaw;
+          // Standard Betaflight Quad-X ("Props In") Motor Mixing
+          float m1 = throttle_output - pid_out_roll + pid_out_pitch + pid_out_yaw; // Rear Right (CW)
+          float m2 = throttle_output - pid_out_roll - pid_out_pitch - pid_out_yaw; // Front Right (CCW)
+          float m3 = throttle_output + pid_out_roll + pid_out_pitch - pid_out_yaw; // Rear Left (CCW)
+          float m4 = throttle_output + pid_out_roll - pid_out_pitch + pid_out_yaw; // Front Left (CW)
 
           // Limit PWM to prevent motors from stalling in mid-air
           // 1150us is the "Motor Idle Speed". It ensures motors never stop
@@ -946,6 +968,19 @@ int main(void) {
         motor2 = 1000;
         motor3 = 1000;
         motor4 = 1000;
+        
+        // --- MOTOR DIAGNOSTICS LOGIC ---
+        if (current_state == STATE_DISARMED && test_motor_id > 0) {
+            if (current_time - test_motor_start_time < 2000) { // Spin for 2 seconds
+                if (test_motor_id == 1) motor1 = 1100;
+                else if (test_motor_id == 2) motor2 = 1100;
+                else if (test_motor_id == 3) motor3 = 1100;
+                else if (test_motor_id == 4) motor4 = 1100;
+            } else {
+                test_motor_id = 0; // Timeout, shut off
+            }
+        }
+        
         Set_Motor_PWM(motor1, motor2, motor3, motor4); // CRITICAL: Actually send the off signal!
       }
 
