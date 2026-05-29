@@ -206,6 +206,23 @@ socket.on('telemetry', (data) => {
         else modeSelect.style.background = ""; 
     }
     
+    // Arm State Sync
+    if (data.arm !== undefined) {
+        const armBtn = document.querySelector('button[onclick="toggleArm(1)"]');
+        const disarmBtn = document.querySelector('button[onclick="toggleArm(0)"]');
+        if (data.arm === 1) {
+            armBtn.style.background = "var(--emerald)";
+            armBtn.style.color = "#fff";
+            disarmBtn.style.background = "rgba(244, 63, 94, 0.2)";
+            disarmBtn.style.color = "var(--rose)";
+        } else {
+            armBtn.style.background = "rgba(16, 185, 129, 0.2)";
+            armBtn.style.color = "var(--emerald)";
+            disarmBtn.style.background = "var(--rose)";
+            disarmBtn.style.color = "#fff";
+        }
+    }
+    
     // Magnetometer Data
     if (data.mx !== undefined && data.my !== undefined && data.mz !== undefined) {
         magX_data.push(data.mx); magY_data.push(data.my); magZ_data.push(data.mz);
@@ -322,8 +339,4 @@ function savePID(axis) {
 // Initialize Magnetometer 3D Plot immediately so the box isn't empty
 initMagPlot();
 
-function testMotor(id) {
-    if(confirm(`WARNING: PROPELLERS MUST BE REMOVED!\n\nAre you sure you want to test Motor ${id}?`)) {
-        socket.emit('test_motor', { id: id });
-    }
-}
+

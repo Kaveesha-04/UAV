@@ -170,9 +170,6 @@ typedef enum {
 
 Flight_Mode current_mode = MODE_STABILIZE;
 
-// Motor Diagnostics
-uint8_t test_motor_id = 0;
-uint32_t test_motor_start_time = 0;
 // Home and Waypoint Coordinates
 float home_lat = 0.0f;
 float home_lon = 0.0f;
@@ -630,16 +627,6 @@ int main(void) {
             }
           }
         }
-        // Format T: T,1 (Test Motor 1)
-        else if (esp_buffer[0] == 'T') {
-          int m_id;
-          if (sscanf(esp_buffer, "T,%d", &m_id) == 1) {
-            if (current_state != STATE_ARMED) { // ONLY IF DISARMED
-              test_motor_id = m_id;
-              test_motor_start_time = current_time;
-            }
-          }
-        }
         // Format B: B (Burn PIDs to Flash)
         else if (esp_buffer[0] == 'B') {
           Flash_Data fd;
@@ -968,19 +955,6 @@ int main(void) {
         motor2 = 1000;
         motor3 = 1000;
         motor4 = 1000;
-        
-        // --- MOTOR DIAGNOSTICS LOGIC ---
-        if (current_state != STATE_ARMED && test_motor_id > 0) {
-            if (current_time - test_motor_start_time < 2000) { // Spin for 2 seconds
-                if (test_motor_id == 1) motor1 = 1150;
-                else if (test_motor_id == 2) motor2 = 1150;
-                else if (test_motor_id == 3) motor3 = 1150;
-                else if (test_motor_id == 4) motor4 = 1150;
-            } else {
-                test_motor_id = 0; // Timeout, shut off
-            }
-        }
-        
         Set_Motor_PWM(motor1, motor2, motor3, motor4); // CRITICAL: Actually send the off signal!
       }
 
@@ -1010,7 +984,7 @@ int main(void) {
             "d,\"t\":%d,\"mt\":%d,"
             "\"pid_r\":[%d.%02d,%d.%02d,%d.%02d,%d.%02d],\"pid_p\":[%d.%02d,%d.%02d,%d."
             "%02d,%d.%02d],\"pid_y\":[%d.%02d,%d.%02d,%d.%02d,%d.%02d],\"md\":%d,\"mx\":%d,"
-            "\"my\":%d,\"mz\":%d,\"ry\":%d,\"rp\":%d,\"rr\":%d}\n",
+            "\"my\":%d,\"mz\":%d,\"ry\":%d,\"rp\":%d,\"rr\":%d,\"arm\":%d}\n",
             (int)battery_voltage, (int)(battery_voltage * 100) % 100, s_r,
             (int)fabsf(roll_actual), (int)(fabsf(roll_actual) * 10) % 10, s_p,
             (int)fabsf(pitch_actual), (int)(fabsf(pitch_actual) * 10) % 10, s_y,
@@ -1033,7 +1007,8 @@ int main(void) {
             (int)(pid_yaw.Ki * 100) % 100, (int)pid_yaw.Kd,
             (int)(pid_yaw.Kd * 100) % 100, (int)pid_yaw.Kf,
             (int)(pid_yaw.Kf * 100) % 100, (int)current_mode, mag_x, mag_y,
-            mag_z, nrf_data.yaw, nrf_data.pitch, nrf_data.roll);
+            mag_z, nrf_data.yaw, nrf_data.pitch, nrf_data.roll,
+            (current_state == STATE_ARMED ? 1 : 0));
 
         // Send to USB (Serial Monitor)
         CDC_Transmit_FS((uint8_t *)uart_buf, strlen(uart_buf));
