@@ -116,7 +116,7 @@
                     <h2>Flight Dynamics (PIDs)</h2>
                     
                     <div class="pid-section">
-                        <h3>ROLL</h3>
+                        <h3>ROLL <span style="font-size: 0.6em; color: var(--cyan); float: right;">Current: P:<span id="drone_r_p">-</span> I:<span id="drone_r_i">-</span> D:<span id="drone_r_d">-</span> F:<span id="drone_r_f">-</span></span></h3>
                         <div class="slider-group">
                             <label>P <span id="val_r_p">1.20</span></label>
                             <input type="range" id="pid_r_p" min="0" max="5" step="0.01" value="1.20">
@@ -129,11 +129,15 @@
                             <label>D <span id="val_r_d">0.01</span></label>
                             <input type="range" id="pid_r_d" min="0" max="0.5" step="0.01" value="0.01">
                         </div>
+                        <div class="slider-group">
+                            <label>F <span id="val_r_f">0.00</span></label>
+                            <input type="range" id="pid_r_f" min="0" max="2" step="0.01" value="0.00">
+                        </div>
                         <button class="btn-save" onclick="savePID('roll')">UPLOAD ROLL PIDs</button>
                     </div>
 
                     <div class="pid-section">
-                        <h3>PITCH</h3>
+                        <h3>PITCH <span style="font-size: 0.6em; color: var(--cyan); float: right;">Current: P:<span id="drone_p_p">-</span> I:<span id="drone_p_i">-</span> D:<span id="drone_p_d">-</span> F:<span id="drone_p_f">-</span></span></h3>
                         <div class="slider-group">
                             <label>P <span id="val_p_p">1.20</span></label>
                             <input type="range" id="pid_p_p" min="0" max="5" step="0.01" value="1.20">
@@ -146,11 +150,15 @@
                             <label>D <span id="val_p_d">0.01</span></label>
                             <input type="range" id="pid_p_d" min="0" max="0.5" step="0.01" value="0.01">
                         </div>
+                        <div class="slider-group">
+                            <label>F <span id="val_p_f">0.00</span></label>
+                            <input type="range" id="pid_p_f" min="0" max="2" step="0.01" value="0.00">
+                        </div>
                         <button class="btn-save" onclick="savePID('pitch')">UPLOAD PITCH PIDs</button>
                     </div>
 
                     <div class="pid-section">
-                        <h3>YAW</h3>
+                        <h3>YAW <span style="font-size: 0.6em; color: var(--cyan); float: right;">Current: P:<span id="drone_y_p">-</span> I:<span id="drone_y_i">-</span> D:<span id="drone_y_d">-</span> F:<span id="drone_y_f">-</span></span></h3>
                         <div class="slider-group">
                             <label>P <span id="val_y_p">2.00</span></label>
                             <input type="range" id="pid_y_p" min="0" max="10" step="0.01" value="2.00">
@@ -162,6 +170,10 @@
                         <div class="slider-group">
                             <label>D <span id="val_y_d">0.00</span></label>
                             <input type="range" id="pid_y_d" min="0" max="0.5" step="0.01" value="0.00">
+                        </div>
+                        <div class="slider-group">
+                            <label>F <span id="val_y_f">0.00</span></label>
+                            <input type="range" id="pid_y_f" min="0" max="2" step="0.01" value="0.00">
                         </div>
                         <button class="btn-save" onclick="savePID('yaw')">UPLOAD YAW PIDs</button>
                     </div>

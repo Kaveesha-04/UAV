@@ -124,9 +124,9 @@ function bindSlider(sliderId, textId) {
     });
 }
 
-bindSlider('pid_r_p', 'val_r_p'); bindSlider('pid_r_i', 'val_r_i'); bindSlider('pid_r_d', 'val_r_d');
-bindSlider('pid_p_p', 'val_p_p'); bindSlider('pid_p_i', 'val_p_i'); bindSlider('pid_p_d', 'val_p_d');
-bindSlider('pid_y_p', 'val_y_p'); bindSlider('pid_y_i', 'val_y_i'); bindSlider('pid_y_d', 'val_y_d');
+bindSlider('pid_r_p', 'val_r_p'); bindSlider('pid_r_i', 'val_r_i'); bindSlider('pid_r_d', 'val_r_d'); bindSlider('pid_r_f', 'val_r_f');
+bindSlider('pid_p_p', 'val_p_p'); bindSlider('pid_p_i', 'val_p_i'); bindSlider('pid_p_d', 'val_p_d'); bindSlider('pid_p_f', 'val_p_f');
+bindSlider('pid_y_p', 'val_y_p'); bindSlider('pid_y_i', 'val_y_i'); bindSlider('pid_y_d', 'val_y_d'); bindSlider('pid_y_f', 'val_y_f');
 
 // Socket Events
 socket.on('connect', () => {
@@ -236,16 +236,37 @@ socket.on('telemetry', (data) => {
     
     // Auto-populate PID Sliders on first load
     if (!pidInitialized && data.pid_r && data.pid_p && data.pid_y) {
-        const setPID = (axis, p, i, d) => {
+        const setPID = (axis, p, i, d, f) => {
             document.getElementById(`pid_${axis}_p`).value = p; document.getElementById(`val_${axis}_p`).innerText = p.toFixed(2);
             document.getElementById(`pid_${axis}_i`).value = i; document.getElementById(`val_${axis}_i`).innerText = i.toFixed(2);
             document.getElementById(`pid_${axis}_d`).value = d; document.getElementById(`val_${axis}_d`).innerText = d.toFixed(2);
+            document.getElementById(`pid_${axis}_f`).value = f; document.getElementById(`val_${axis}_f`).innerText = f.toFixed(2);
         };
-        setPID('r', data.pid_r[0], data.pid_r[1], data.pid_r[2]);
-        setPID('p', data.pid_p[0], data.pid_p[1], data.pid_p[2]);
-        setPID('y', data.pid_y[0], data.pid_y[1], data.pid_y[2]);
+        setPID('r', data.pid_r[0], data.pid_r[1], data.pid_r[2], data.pid_r[3]);
+        setPID('p', data.pid_p[0], data.pid_p[1], data.pid_p[2], data.pid_p[3]);
+        setPID('y', data.pid_y[0], data.pid_y[1], data.pid_y[2], data.pid_y[3]);
         
         pidInitialized = true;
+    }
+
+    // Always update "Current" readouts
+    if (data.pid_r) {
+        document.getElementById('drone_r_p').innerText = data.pid_r[0].toFixed(2);
+        document.getElementById('drone_r_i').innerText = data.pid_r[1].toFixed(2);
+        document.getElementById('drone_r_d').innerText = data.pid_r[2].toFixed(2);
+        document.getElementById('drone_r_f').innerText = data.pid_r[3].toFixed(2);
+    }
+    if (data.pid_p) {
+        document.getElementById('drone_p_p').innerText = data.pid_p[0].toFixed(2);
+        document.getElementById('drone_p_i').innerText = data.pid_p[1].toFixed(2);
+        document.getElementById('drone_p_d').innerText = data.pid_p[2].toFixed(2);
+        document.getElementById('drone_p_f').innerText = data.pid_p[3].toFixed(2);
+    }
+    if (data.pid_y) {
+        document.getElementById('drone_y_p').innerText = data.pid_y[0].toFixed(2);
+        document.getElementById('drone_y_i').innerText = data.pid_y[1].toFixed(2);
+        document.getElementById('drone_y_d').innerText = data.pid_y[2].toFixed(2);
+        document.getElementById('drone_y_f').innerText = data.pid_y[3].toFixed(2);
     }
     
     // Update Chart
@@ -265,22 +286,25 @@ socket.on('telemetry', (data) => {
 
 // PID Saving Function
 function savePID(axis) {
-    let p, i, d;
+    let p, i, d, f;
     if (axis === 'roll') {
         p = parseFloat(document.getElementById('pid_r_p').value);
         i = parseFloat(document.getElementById('pid_r_i').value);
         d = parseFloat(document.getElementById('pid_r_d').value);
+        f = parseFloat(document.getElementById('pid_r_f').value);
     } else if (axis === 'pitch') {
         p = parseFloat(document.getElementById('pid_p_p').value);
         i = parseFloat(document.getElementById('pid_p_i').value);
         d = parseFloat(document.getElementById('pid_p_d').value);
+        f = parseFloat(document.getElementById('pid_p_f').value);
     } else if (axis === 'yaw') {
         p = parseFloat(document.getElementById('pid_y_p').value);
         i = parseFloat(document.getElementById('pid_y_i').value);
         d = parseFloat(document.getElementById('pid_y_d').value);
+        f = parseFloat(document.getElementById('pid_y_f').value);
     }
     
-    socket.emit('tune_pid', { axis: axis, p: p, i: i, d: d });
+    socket.emit('tune_pid', { axis: axis, p: p, i: i, d: d, f: f });
     
     // Flash button green
     const btn = event.target;

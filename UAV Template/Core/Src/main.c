@@ -118,19 +118,19 @@ uint16_t prev_time_us;
 float dt;
 
 // PID Controllers (Attitude)
-PID_Controller pid_roll = {0.6f, 0.0f, 0.01f, 0.0f, 0.0f, 400.0f, -400.0f};
-PID_Controller pid_pitch = {0.6f, 0.0f, 0.01f, 0.0f, 0.0f, 400.0f, -400.0f};
-PID_Controller pid_yaw = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 400.0f, -400.0f};
+PID_Controller pid_roll = {0.6f, 0.0f, 0.01f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 400.0f, -400.0f};
+PID_Controller pid_pitch = {0.6f, 0.0f, 0.01f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 400.0f, -400.0f};
+PID_Controller pid_yaw = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 400.0f, -400.0f};
 
 // PID Controllers (Altitude and GPS)
-PID_Controller pid_alt = {1.5f, 0.5f,   0.1f,   0.0f,
-                          0.0f, 300.0f, -200.0f}; // Output is throttle override
+PID_Controller pid_alt = {1.5f, 0.5f,   0.1f,   0.0f, 0.0f,
+                          0.0f, 0.0f, 0.0f, 300.0f, -200.0f}; // Output is throttle override
 PID_Controller pid_gps_pitch = {
-    0.05f, 0.0f,  0.02f, 0.0f,
-    0.0f,  20.0f, -20.0f}; // Output is pitch angle (max 20 deg)
+    0.05f, 0.0f,  0.02f, 0.0f, 0.0f,
+    0.0f,  0.0f, 0.0f, 20.0f, -20.0f}; // Output is pitch angle (max 20 deg)
 PID_Controller pid_gps_roll = {
-    0.05f, 0.0f,  0.02f, 0.0f,
-    0.0f,  20.0f, -20.0f}; // Output is roll angle (max 20 deg)
+    0.05f, 0.0f,  0.02f, 0.0f, 0.0f,
+    0.0f,  0.0f, 0.0f, 20.0f, -20.0f}; // Output is roll angle (max 20 deg)
 
 // Navigation State Variables
 uint8_t alt_hold_active = 0;
@@ -365,12 +365,15 @@ int main(void) {
     pid_roll.Kp = flash_mem.r_p;
     pid_roll.Ki = flash_mem.r_i;
     pid_roll.Kd = flash_mem.r_d;
+    pid_roll.Kf = flash_mem.r_f;
     pid_pitch.Kp = flash_mem.p_p;
     pid_pitch.Ki = flash_mem.p_i;
     pid_pitch.Kd = flash_mem.p_d;
+    pid_pitch.Kf = flash_mem.p_f;
     pid_yaw.Kp = flash_mem.y_p;
     pid_yaw.Ki = flash_mem.y_i;
     pid_yaw.Kd = flash_mem.y_d;
+    pid_yaw.Kf = flash_mem.y_f;
 
     // Apply saved Magnetometer offsets
     mag_offset_x = flash_mem.mag_offset_x;
@@ -553,23 +556,26 @@ int main(void) {
       if (esp_string_ready) {
         esp_string_ready = 0;
 
-        // Format P: P,roll,1.20,0.05,0.01
+        // Format P: P,roll,1.20,0.05,0.01,0.00
         if (esp_buffer[0] == 'P') {
           char axis[10];
-          float p, i, d;
-          if (sscanf(esp_buffer, "P,%[^,],%f,%f,%f", axis, &p, &i, &d) == 4) {
+          float p, i, d, f;
+          if (sscanf(esp_buffer, "P,%[^,],%f,%f,%f,%f", axis, &p, &i, &d, &f) == 5) {
             if (strcmp(axis, "roll") == 0) {
               pid_roll.Kp = p;
               pid_roll.Ki = i;
               pid_roll.Kd = d;
+              pid_roll.Kf = f;
             } else if (strcmp(axis, "pitch") == 0) {
               pid_pitch.Kp = p;
               pid_pitch.Ki = i;
               pid_pitch.Kd = d;
+              pid_pitch.Kf = f;
             } else if (strcmp(axis, "yaw") == 0) {
               pid_yaw.Kp = p;
               pid_yaw.Ki = i;
               pid_yaw.Kd = d;
+              pid_yaw.Kf = f;
             }
           }
         }
@@ -602,19 +608,15 @@ int main(void) {
           int arm_val;
           if (sscanf(esp_buffer, "A,%d", &arm_val) == 1) {
             if (arm_val == 1) {
-              if (current_state == STATE_DISARMED || current_state == STATE_FAILSAFE) {
-                if (base_throttle <= 1120.0f) { // Safety check: ONLY arm if throttle is zero!
-                  current_state = STATE_ARMED;
-                  setpoint_yaw = yaw_actual;
-                  home_lat = gps_lat;
-                  home_lon = gps_lon;
-                }
-              }
+              // Force arm without checking throttle or previous state
+              current_state = STATE_ARMED;
+              setpoint_yaw = yaw_actual;
+              home_lat = gps_lat;
+              home_lon = gps_lon;
             } else if (arm_val == 0) {
-              if (current_state == STATE_ARMED) {
-                current_state = STATE_DISARMED;
-                Reset_PID_Integrals(&pid_roll, &pid_pitch, &pid_yaw);
-              }
+              // Force disarm
+              current_state = STATE_DISARMED;
+              Reset_PID_Integrals(&pid_roll, &pid_pitch, &pid_yaw);
             }
           }
         }
@@ -624,12 +626,15 @@ int main(void) {
           fd.r_p = pid_roll.Kp;
           fd.r_i = pid_roll.Ki;
           fd.r_d = pid_roll.Kd;
+          fd.r_f = pid_roll.Kf;
           fd.p_p = pid_pitch.Kp;
           fd.p_i = pid_pitch.Ki;
           fd.p_d = pid_pitch.Kd;
+          fd.p_f = pid_pitch.Kf;
           fd.y_p = pid_yaw.Kp;
           fd.y_i = pid_yaw.Ki;
           fd.y_d = pid_yaw.Kd;
+          fd.y_f = pid_yaw.Kf;
           fd.mag_offset_x = mag_offset_x;
           fd.mag_offset_y = mag_offset_y;
           fd.mag_offset_z = mag_offset_z;
@@ -648,12 +653,15 @@ int main(void) {
             fd.r_p = pid_roll.Kp;
             fd.r_i = pid_roll.Ki;
             fd.r_d = pid_roll.Kd;
+            fd.r_f = pid_roll.Kf;
             fd.p_p = pid_pitch.Kp;
             fd.p_i = pid_pitch.Ki;
             fd.p_d = pid_pitch.Kd;
+            fd.p_f = pid_pitch.Kf;
             fd.y_p = pid_yaw.Kp;
             fd.y_i = pid_yaw.Ki;
             fd.y_d = pid_yaw.Kd;
+            fd.y_f = pid_yaw.Kf;
             fd.mag_offset_x = mag_offset_x;
             fd.mag_offset_y = mag_offset_y;
             fd.mag_offset_z = mag_offset_z;
@@ -800,12 +808,22 @@ int main(void) {
         } else {
           // ACTIVE FLIGHT MODE
 
+          // Calculate TPA factor (1.0 = full PID, < 1.0 = reduced PID)
+          float tpa_factor = 1.0f;
+          float tpa_breakpoint = 1500.0f; // Start reducing at 50% throttle
+          float tpa_max_reduction = 0.3f; // At max throttle (2000), reduce P and D by 30%
+          
+          if (base_throttle > tpa_breakpoint) {
+              tpa_factor = 1.0f - ((base_throttle - tpa_breakpoint) / (2000.0f - tpa_breakpoint)) * tpa_max_reduction;
+              if (tpa_factor < 0.1f) tpa_factor = 0.1f; // Safety clamp
+          }
+
           // 1. Altitude Hold Override
           float current_altitude = BMP280_GetAltitude();
           float throttle_output = base_throttle;
           if (alt_hold_active) {
             float alt_correction =
-                PID_Compute(&pid_alt, target_altitude, current_altitude, dt);
+                PID_Compute(&pid_alt, target_altitude, current_altitude, dt, 1.0f);
             throttle_output =
                 1500.0f + alt_correction; // Hover throttle is ~1500
           }
@@ -847,9 +865,9 @@ int main(void) {
             // Assuming current velocity is 0 for basic position hold logic
             // (Target vs 0)
             float gps_pitch_corr =
-                PID_Compute(&pid_gps_pitch, target_vel_x, 0, dt);
+                PID_Compute(&pid_gps_pitch, target_vel_x, 0, dt, 1.0f);
             float gps_roll_corr =
-                PID_Compute(&pid_gps_roll, target_vel_y, 0, dt);
+                PID_Compute(&pid_gps_roll, target_vel_y, 0, dt, 1.0f);
 
             // Override the NRF setpoints (Note: +Pitch means tilt forward,
             // +Roll means tilt right)
@@ -859,11 +877,11 @@ int main(void) {
 
           // 3. Core Attitude PID Compute
           float pid_out_roll =
-              PID_Compute(&pid_roll, setpoint_roll, roll_actual, dt);
+              PID_Compute(&pid_roll, setpoint_roll, roll_actual, dt, tpa_factor);
           float pid_out_pitch =
-              PID_Compute(&pid_pitch, setpoint_pitch, pitch_actual, dt);
+              PID_Compute(&pid_pitch, setpoint_pitch, pitch_actual, dt, tpa_factor);
           float pid_out_yaw =
-              PID_Compute_Angular(&pid_yaw, setpoint_yaw, yaw_actual, dt);
+              PID_Compute_Angular(&pid_yaw, setpoint_yaw, yaw_actual, dt, tpa_factor);
 
           // 4. Motor mixing (Quadcopter X Configuration)
           float idle_speed = 1150.0f;
@@ -955,8 +973,8 @@ int main(void) {
             "{\"v\":%d.%02d,\"r\":%s%d.%d,\"p\":%s%d.%d,\"y\":%s%d.%d,\"a\":%s%"
             "d.%d,\"d\":%s%d.%d,\"glat\":%s%d.%05d,\"glon\":%s%d.%05d,\"gf\":%"
             "d,\"t\":%d,\"mt\":%d,"
-            "\"pid_r\":[%d.%02d,%d.%02d,%d.%02d],\"pid_p\":[%d.%02d,%d.%02d,%d."
-            "%02d],\"pid_y\":[%d.%02d,%d.%02d,%d.%02d],\"md\":%d,\"mx\":%d,"
+            "\"pid_r\":[%d.%02d,%d.%02d,%d.%02d,%d.%02d],\"pid_p\":[%d.%02d,%d.%02d,%d."
+            "%02d,%d.%02d],\"pid_y\":[%d.%02d,%d.%02d,%d.%02d,%d.%02d],\"md\":%d,\"mx\":%d,"
             "\"my\":%d,\"mz\":%d,\"ry\":%d,\"rp\":%d,\"rr\":%d}\n",
             (int)battery_voltage, (int)(battery_voltage * 100) % 100, s_r,
             (int)fabsf(roll_actual), (int)(fabsf(roll_actual) * 10) % 10, s_p,
@@ -970,13 +988,16 @@ int main(void) {
             (int)base_throttle, mag_type, (int)pid_roll.Kp,
             (int)(pid_roll.Kp * 100) % 100, (int)pid_roll.Ki,
             (int)(pid_roll.Ki * 100) % 100, (int)pid_roll.Kd,
-            (int)(pid_roll.Kd * 100) % 100, (int)pid_pitch.Kp,
+            (int)(pid_roll.Kd * 100) % 100, (int)pid_roll.Kf,
+            (int)(pid_roll.Kf * 100) % 100, (int)pid_pitch.Kp,
             (int)(pid_pitch.Kp * 100) % 100, (int)pid_pitch.Ki,
             (int)(pid_pitch.Ki * 100) % 100, (int)pid_pitch.Kd,
-            (int)(pid_pitch.Kd * 100) % 100, (int)pid_yaw.Kp,
+            (int)(pid_pitch.Kd * 100) % 100, (int)pid_pitch.Kf,
+            (int)(pid_pitch.Kf * 100) % 100, (int)pid_yaw.Kp,
             (int)(pid_yaw.Kp * 100) % 100, (int)pid_yaw.Ki,
             (int)(pid_yaw.Ki * 100) % 100, (int)pid_yaw.Kd,
-            (int)(pid_yaw.Kd * 100) % 100, (int)current_mode, mag_x, mag_y,
+            (int)(pid_yaw.Kd * 100) % 100, (int)pid_yaw.Kf,
+            (int)(pid_yaw.Kf * 100) % 100, (int)current_mode, mag_x, mag_y,
             mag_z, nrf_data.yaw, nrf_data.pitch, nrf_data.roll);
 
         // Send to USB (Serial Monitor)
