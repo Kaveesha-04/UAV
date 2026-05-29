@@ -972,10 +972,10 @@ int main(void) {
         // --- MOTOR DIAGNOSTICS LOGIC ---
         if (current_state != STATE_ARMED && test_motor_id > 0) {
             if (current_time - test_motor_start_time < 2000) { // Spin for 2 seconds
-                if (test_motor_id == 1) motor1 = 1100;
-                else if (test_motor_id == 2) motor2 = 1100;
-                else if (test_motor_id == 3) motor3 = 1100;
-                else if (test_motor_id == 4) motor4 = 1100;
+                if (test_motor_id == 1) motor1 = 1150;
+                else if (test_motor_id == 2) motor2 = 1150;
+                else if (test_motor_id == 3) motor3 = 1150;
+                else if (test_motor_id == 4) motor4 = 1150;
             } else {
                 test_motor_id = 0; // Timeout, shut off
             }
