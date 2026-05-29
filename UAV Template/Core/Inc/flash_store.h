@@ -14,11 +14,11 @@ typedef struct {
     uint32_t magic;
     
     // Roll PID
-    float r_p; float r_i; float r_d;
+    float r_p; float r_i; float r_d; float r_f;
     // Pitch PID
-    float p_p; float p_i; float p_d;
+    float p_p; float p_i; float p_d; float p_f;
     // Yaw PID
-    float y_p; float y_i; float y_d;
+    float y_p; float y_i; float y_d; float y_f;
     
     // Magnetometer Hard Iron Offsets
     float mag_offset_x;

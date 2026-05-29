@@ -128,8 +128,8 @@ io.on('connection', (wsSocket) => {
     }
 
     wsSocket.on('tune_pid', (data) => {
-        // Format to CSV: P,roll,1.20,0.05,0.01\n
-        sendCommandToDrone(`P,${data.axis},${data.p},${data.i},${data.d}\n`);
+        // Format to CSV: P,roll,1.20,0.05,0.01,0.00\n
+        sendCommandToDrone(`P,${data.axis},${data.p},${data.i},${data.d},${data.f}\n`);
     });
 
     wsSocket.on('send_waypoint', (data) => {
