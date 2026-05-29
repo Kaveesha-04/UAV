@@ -4,7 +4,7 @@
 #include "main.h"
 
 // Magic number to check if Flash has been initialized before
-#define EEPROM_MAGIC 0xDEADBEEF
+#define EEPROM_MAGIC 0xDEADBEE1
 
 // Sector 7, Bank 2 on STM32H743x
 #define FLASH_USER_START_ADDR   0x081E0000 

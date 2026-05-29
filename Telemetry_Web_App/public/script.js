@@ -322,3 +322,8 @@ function savePID(axis) {
 // Initialize Magnetometer 3D Plot immediately so the box isn't empty
 initMagPlot();
 
+function testMotor(id) {
+    if(confirm(`WARNING: PROPELLERS MUST BE REMOVED!\n\nAre you sure you want to test Motor ${id}?`)) {
+        socket.emit('test_motor', { id: id });
+    }
+}
