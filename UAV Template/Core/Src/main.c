@@ -88,6 +88,11 @@ volatile uint8_t esp_string_ready = 0;
 volatile uint8_t esp_parsing = 0;
 char esp_parse_buffer[100];
 
+// USB CDC Variables
+char usb_buffer[100];
+uint8_t usb_buf_index = 0;
+volatile uint8_t usb_string_ready = 0;
+
 // Magnetometer Type and Data
 uint8_t mag_type = 0; // 0 = None, 0x0D = QMC5883L, 0x1E = HMC5883L
 int16_t mag_x = 0, mag_y = 0, mag_z = 0;
@@ -153,7 +158,7 @@ uint16_t motor1, motor2, motor3, motor4;
 float setpoint_roll = 0.0f;
 float setpoint_pitch = 0.0f;
 float setpoint_yaw = 0.0f;
-float base_throttle = 1200.0f; // TEST MODE: Motors will spin at a slow idle
+float base_throttle = 1000.0f; // Default to 1000 (Motors OFF) so dashboard can arm
 
 // Flight State Machine
 typedef enum {
@@ -322,7 +327,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
       }
       esp_buf_index = 0;
     }
-    HAL_UART_Receive_IT(&huart2, &esp_rx_data, 1);
+    HAL_UART_Receive_IT(&huart2, (uint8_t *)&esp_rx_data, 1);
+  }
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+  // If an Overrun Error (ORE) occurs from a burst of dashboard commands, 
+  // the HAL automatically disables the interrupt. We must restart it here!
+  if (huart->Instance == USART3) {
+    HAL_UART_Receive_IT(&huart3, (uint8_t *)&gps_rx_data, 1);
+  } else if (huart->Instance == USART2) {
+    HAL_UART_Receive_IT(&huart2, (uint8_t *)&esp_rx_data, 1);
   }
 }
 /* USER CODE END 0 */
@@ -625,43 +640,38 @@ int main(void) {
         gps_parsing = 0; // UNLOCK buffer
       }
 
-      // --- ESP32 INCOMING COMMANDS (PID Tuning, Modes, Waypoints) ---
+      // --- USB & ESP32 INCOMING COMMANDS (PID Tuning, Modes, Waypoints) ---
       if (esp_string_ready) {
         esp_parsing = 1; // LOCK buffer from interrupt
         esp_string_ready = 0;
+      } else if (usb_string_ready) {
+        esp_parsing = 1;
+        usb_string_ready = 0;
+        strcpy((char *)esp_parse_buffer, (char *)usb_buffer);
+      }
 
+      if (esp_parsing) {
         // Format P: P,roll,1.20,0.05,0.01,0.00
         if (esp_parse_buffer[0] == 'P') {
-          char *token = strtok((char *)esp_parse_buffer, ",");
-          if (token != NULL && token[0] == 'P') {
-            char *axis = strtok(NULL, ",");
-            char *p_str = strtok(NULL, ",");
-            char *i_str = strtok(NULL, ",");
-            char *d_str = strtok(NULL, ",");
-            char *f_str = strtok(NULL, "\n");
-
-            if (axis && p_str && i_str && d_str && f_str) {
-              float p = atof(p_str);
-              float i = atof(i_str);
-              float d = atof(d_str);
-              float f = atof(f_str);
-
-              if (strcmp(axis, "roll") == 0) {
-                pid_roll.Kp = p;
-                pid_roll.Ki = i;
-                pid_roll.Kd = d;
-                pid_roll.Kf = f;
-              } else if (strcmp(axis, "pitch") == 0) {
-                pid_pitch.Kp = p;
-                pid_pitch.Ki = i;
-                pid_pitch.Kd = d;
-                pid_pitch.Kf = f;
-              } else if (strcmp(axis, "yaw") == 0) {
-                pid_yaw.Kp = p;
-                pid_yaw.Ki = i;
-                pid_yaw.Kd = d;
-                pid_yaw.Kf = f;
-              }
+          char axis[16];
+          float p = 0, i = 0, d = 0, f = 0;
+          
+          if (sscanf((char *)esp_parse_buffer, "P,%15[^,],%f,%f,%f,%f", axis, &p, &i, &d, &f) == 5) {
+            if (strcmp(axis, "roll") == 0) {
+              pid_roll.Kp = p;
+              pid_roll.Ki = i;
+              pid_roll.Kd = d;
+              pid_roll.Kf = f;
+            } else if (strcmp(axis, "pitch") == 0) {
+              pid_pitch.Kp = p;
+              pid_pitch.Ki = i;
+              pid_pitch.Kd = d;
+              pid_pitch.Kf = f;
+            } else if (strcmp(axis, "yaw") == 0) {
+              pid_yaw.Kp = p;
+              pid_yaw.Ki = i;
+              pid_yaw.Kd = d;
+              pid_yaw.Kf = f;
             }
           }
         }
@@ -781,7 +791,11 @@ int main(void) {
       if (current_time - last_radio_time > 500) {
         // No data received for 500ms! Connection lost.
         if (current_state == STATE_ARMED) {
-          if (gps_fix > 0 && home_lat != 0.0f) {
+          if (base_throttle <= 1150.0f) {
+            // Drone was idling on the ground. Disarm instantly for safety!
+            current_state = STATE_FAILSAFE;
+            base_throttle = 1000.0f;
+          } else if (gps_fix > 0 && home_lat != 0.0f) {
             current_mode = MODE_RTL; // Fly home safely
           } else {
             current_mode = MODE_ALTHOLD;
@@ -884,13 +898,19 @@ int main(void) {
 
         // 4. Low Battery Failsafe (Bare-Metal)
         // If under 10.2V (3.4V per cell on 3S), trigger auto-land
-
-        // If under 10.2V (3.4V per cell on 3S), trigger auto-land
         if (battery_voltage > 5.0f && battery_voltage < 10.2f &&
             current_state == STATE_ARMED) {
-          current_state = STATE_FAILSAFE; // Force auto-land
-          alt_hold_active = 1;
-          target_altitude = alt_actual;
+          if (base_throttle <= 1150.0f) {
+             current_state = STATE_DISARMED; // Disarm if already on ground
+          } else {
+            current_mode = MODE_ALTHOLD; // Force auto-land
+            if (!alt_hold_active) {
+              alt_hold_active = 1;
+              target_altitude = alt_actual;
+            } else {
+              target_altitude -= 0.5f * dt; // Slowly descend at 0.5m/s
+            }
+          }
         }
       }
 
@@ -990,9 +1010,9 @@ int main(void) {
             float gps_roll_corr =
                 PID_Compute(&pid_gps_roll, target_vel_y, 0, dt, 1.0f);
 
-            // Override the NRF setpoints (Note: +Pitch means tilt forward,
-            // +Roll means tilt right)
-            setpoint_pitch = gps_pitch_corr;
+            // Override the NRF setpoints 
+            // Note: Positive pitch targets Nose UP (backwards), so we must invert the X velocity correction
+            setpoint_pitch = -gps_pitch_corr;
             setpoint_roll = gps_roll_corr;
           }
 
@@ -1073,15 +1093,15 @@ int main(void) {
                       motor4); // CRITICAL: Actually send the off signal!
       }
 
-      // 6. Debug Printing via USB & ESP32 (Every 200ms / 50 loops)
-      // Reduced to 5Hz to prevent the ESP32 WiFi buffer from filling up and
-      // causing dashboard latency
+      // 6. Debug Printing via USB & ESP32 (Every 200ms / 5Hz)
       static uint8_t print_counter = 0;
       print_counter++;
       if (print_counter >= 50) {
         print_counter = 0;
         float heading = Get_Mag_Heading();
         float alt = BMP280_GetAltitude();
+
+        static uint8_t uart_buf[512]; // Increased size and made static to prevent stack overflow
 
         const char *s_r = (roll_actual < 0) ? "-" : "";
         const char *s_p = (pitch_actual < 0) ? "-" : "";
@@ -1094,7 +1114,7 @@ int main(void) {
         // Added PID values, raw Mag data, and Battery Voltage to the outgoing
         // JSON!
         sprintf(
-            uart_buf,
+            (char *)uart_buf,
             "{\"v\":%d.%02d,\"r\":%s%d.%d,\"p\":%s%d.%d,\"y\":%s%d.%d,\"a\":%s%"
             "d.%d,\"d\":%s%d.%d,\"glat\":%s%d.%05d,\"glon\":%s%d.%05d,\"gf\":%"
             "d,\"t\":%d,\"mt\":%d,"
@@ -1129,10 +1149,10 @@ int main(void) {
             (current_state == STATE_ARMED ? 1 : 0));
 
         // Send to USB (Serial Monitor)
-        CDC_Transmit_FS((uint8_t *)uart_buf, strlen(uart_buf));
+        CDC_Transmit_FS(uart_buf, strlen((char *)uart_buf));
 
         // Send to ESP32 Telemetry (UART2)
-        HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, strlen(uart_buf), 50);
+        HAL_UART_Transmit(&huart2, uart_buf, strlen((char *)uart_buf), 50);
       }
     }
   }
@@ -1440,6 +1460,14 @@ static void MX_TIM4_Init(void) {
 }
 
 static void BareMetal_ADC1_Init(void) {
+  // Configure ADC Clock Source to use CLKP (per_ck)
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+  PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_CLKP;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK) {
+    Error_Handler();
+  }
+
   // 1. Enable Clocks
   RCC->AHB4ENR |= RCC_AHB4ENR_GPIOCEN; // Enable GPIOC clock
   RCC->AHB1ENR |= RCC_AHB1ENR_ADC12EN; // Enable ADC12 clock
