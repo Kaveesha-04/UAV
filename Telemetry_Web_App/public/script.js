@@ -186,6 +186,17 @@ socket.on('telemetry', (data) => {
         }
     }
     
+    // Battery Update
+    if (data.v !== undefined) {
+        const battSpan = document.getElementById('val-batt');
+        battSpan.innerText = 'BAT: ' + data.v.toFixed(1) + 'V';
+        if (data.v < 10.2) {
+            battSpan.style.color = '#f43f5e'; // Red for low battery
+        } else {
+            battSpan.style.color = '#10b981'; // Green for healthy battery
+        }
+    }
+    
     // Engine Power
     if (data.t !== undefined) {
         document.getElementById('val-throttle').innerText = data.t;
@@ -338,5 +349,10 @@ function savePID(axis) {
 
 // Initialize Magnetometer 3D Plot immediately so the box isn't empty
 initMagPlot();
+
+// Heartbeat to let the drone know the dashboard is still connected
+setInterval(() => {
+    socket.emit('heartbeat');
+}, 1000);
 
 

@@ -86,6 +86,8 @@ uint8_t esp_rx_data;
 char esp_buffer[100];
 uint8_t esp_buf_index = 0;
 volatile uint8_t esp_string_ready = 0;
+volatile uint8_t esp_parsing = 0;
+char esp_parse_buffer[100];
 
 // Magnetometer Type and Data
 uint8_t mag_type = 0; // 0 = None, 0x0D = QMC5883L, 0x1E = HMC5883L
@@ -181,6 +183,9 @@ uint32_t last_button_press = 0; // For debounce
 // NRF Radio Variables
 struct Data_Package nrf_data;
 uint32_t last_radio_time = 0;
+uint32_t last_dashboard_time = 0;
+
+uint8_t i2c_error_count = 0; // Tracks consecutive I2C failures
 
 /* USER CODE END PV */
 
@@ -239,6 +244,48 @@ int16_t map_joystick(int16_t val, int16_t min_val, int16_t mid_val,
   }
 }
 
+// I2C Recovery Function to unbrick a stuck slave
+void I2C1_Recover(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    // 1. Disable I2C peripheral
+    __HAL_I2C_DISABLE(&hi2c1);
+    HAL_I2C_DeInit(&hi2c1);
+
+    // 2. Configure SCL and SDA as GPIO Outputs
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7; // PB6 = SCL, PB7 = SDA
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    // 3. Toggle SCL 9 times to force the slave to release SDA
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET); // SDA High
+    for (int i = 0; i < 9; i++) {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET); // SCL High
+        for(volatile int j=0; j<5000; j++); // Short delay
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET); // SCL Low
+        for(volatile int j=0; j<5000; j++); // Short delay
+    }
+
+    // 4. Send STOP condition (SCL High, then SDA High)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
+    for(volatile int j=0; j<5000; j++);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, GPIO_PIN_SET);
+    for(volatile int j=0; j<5000; j++);
+
+    // 5. Re-initialize I2C
+    MX_I2C1_Init();
+    
+    // Re-initialize Magnetometer after reset
+    if (mag_type == 0x0D) QMC5883L_Init(&hi2c1);
+    else if (mag_type == 0x1E) HMC5883L_Init(&hi2c1);
+    else if (mag_type == 0x2C) QMC5883P_Init(&hi2c1);
+    
+    i2c_error_count = 0;
+}
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
   if (huart->Instance == USART3) {
     if (gps_rx_data != '\n' && gps_rx_data != '\r' && gps_buf_index < 99) {
@@ -259,7 +306,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
       esp_buffer[esp_buf_index++] = esp_rx_data;
     } else if (esp_rx_data == '\n') {
       esp_buffer[esp_buf_index] = '\0';
-      esp_string_ready = 1;
+      if (!esp_parsing) {
+        strcpy(esp_parse_buffer, esp_buffer);
+        esp_string_ready = 1;
+      }
       esp_buf_index = 0;
     }
     HAL_UART_Receive_IT(&huart2, &esp_rx_data, 1);
@@ -308,7 +358,7 @@ int main(void) {
   MX_I2C1_Init();
   MX_USART3_UART_Init();
   MX_TIM4_Init();
-  // BareMetal_ADC1_Init(); // TEMPORARILY DISABLED to ensure it doesn't halt the boot sequence
+  BareMetal_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
   // 1. Start Motor PWM Timers
@@ -400,8 +450,10 @@ int main(void) {
       dt = 0.004f; // Perfect 250Hz timing guaranteed by ISR
 
       // 1. Read Battery Voltage Early
-      // uint16_t adc_val = BareMetal_ADC1_Read(); // TEMPORARILY DISABLED to prevent infinite loop
-      float battery_voltage = 12.6f; // Dummy voltage until ADC is fixed
+      uint16_t adc_val = BareMetal_ADC1_Read(); 
+      // Calculate voltage (Assuming 16-bit ADC, 3.3V Ref, and 11:1 Voltage Divider)
+      float battery_voltage = ((float)adc_val / 65535.0f) * 3.3f * 11.0f; 
+      if (adc_val == 0) battery_voltage = 12.6f; // Fallback if ADC times out
 
       // 2. Read sensor data
       MPU6500_Read_Angles(&hspi2, dt);
@@ -536,6 +588,12 @@ int main(void) {
       sensor_counter++;
       if (sensor_counter >= 5) { // 50Hz (every 5 loops of 250Hz)
         sensor_counter = 0;
+        
+        if (i2c_error_count >= 5) {
+            I2C1_Recover();
+            i2c_error_count = 0;
+        }
+
         if (mag_type == 0x0D)
           QMC5883L_Read(&hi2c1);
         else if (mag_type == 0x1E)
@@ -555,11 +613,12 @@ int main(void) {
 
       // --- ESP32 INCOMING COMMANDS (PID Tuning, Modes, Waypoints) ---
       if (esp_string_ready) {
+        esp_parsing = 1; // LOCK buffer from interrupt
         esp_string_ready = 0;
 
         // Format P: P,roll,1.20,0.05,0.01,0.00
-        if (esp_buffer[0] == 'P') {
-          char* token = strtok((char*)esp_buffer, ",");
+        if (esp_parse_buffer[0] == 'P') {
+          char* token = strtok((char*)esp_parse_buffer, ",");
           if (token != NULL && token[0] == 'P') {
             char* axis = strtok(NULL, ",");
             char* p_str = strtok(NULL, ",");
@@ -584,9 +643,9 @@ int main(void) {
           }
         }
         // Format M: M,loiter
-        else if (esp_buffer[0] == 'M') {
+        else if (esp_parse_buffer[0] == 'M') {
           char mode_str[20];
-          if (sscanf(esp_buffer, "M,%s", mode_str) == 1) {
+          if (sscanf(esp_parse_buffer, "M,%s", mode_str) == 1) {
             if (strcmp(mode_str, "stabilize") == 0)
               current_mode = MODE_STABILIZE;
             else if (strcmp(mode_str, "althold") == 0)
@@ -598,8 +657,8 @@ int main(void) {
           }
         }
         // Format W: W,6.92710,79.86120
-        else if (esp_buffer[0] == 'W') {
-          char* token = strtok((char*)esp_buffer, ",");
+        else if (esp_parse_buffer[0] == 'W') {
+          char* token = strtok((char*)esp_parse_buffer, ",");
           if (token != NULL && token[0] == 'W') {
             char* lat_str = strtok(NULL, ",");
             char* lon_str = strtok(NULL, "\n");
@@ -611,15 +670,17 @@ int main(void) {
           }
         }
         // Format A: A,1 (Arm) or A,0 (Disarm)
-        else if (esp_buffer[0] == 'A') {
+        else if (esp_parse_buffer[0] == 'A') {
           int arm_val;
-          if (sscanf(esp_buffer, "A,%d", &arm_val) == 1) {
+          if (sscanf(esp_parse_buffer, "A,%d", &arm_val) == 1) {
             if (arm_val == 1) {
-              // Force arm without checking throttle or previous state
-              current_state = STATE_ARMED;
-              setpoint_yaw = yaw_actual;
-              home_lat = gps_lat;
-              home_lon = gps_lon;
+              // Only allow arming from dashboard if physical throttle is zero!
+              if (base_throttle <= 1120.0f) {
+                current_state = STATE_ARMED;
+                setpoint_yaw = yaw_actual;
+                home_lat = gps_lat;
+                home_lon = gps_lon;
+              }
             } else if (arm_val == 0) {
               // Force disarm
               current_state = STATE_DISARMED;
@@ -628,38 +689,8 @@ int main(void) {
           }
         }
         // Format B: B (Burn PIDs to Flash)
-        else if (esp_buffer[0] == 'B') {
-          Flash_Data fd;
-          fd.r_p = pid_roll.Kp;
-          fd.r_i = pid_roll.Ki;
-          fd.r_d = pid_roll.Kd;
-          fd.r_f = pid_roll.Kf;
-          fd.p_p = pid_pitch.Kp;
-          fd.p_i = pid_pitch.Ki;
-          fd.p_d = pid_pitch.Kd;
-          fd.p_f = pid_pitch.Kf;
-          fd.y_p = pid_yaw.Kp;
-          fd.y_i = pid_yaw.Ki;
-          fd.y_d = pid_yaw.Kd;
-          fd.y_f = pid_yaw.Kf;
-          fd.mag_offset_x = mag_offset_x;
-          fd.mag_offset_y = mag_offset_y;
-          fd.mag_offset_z = mag_offset_z;
-          Flash_Save(&fd);
-        }
-        // Format C: C,mag_x,mag_y,mag_z (Update Offsets)
-        else if (esp_buffer[0] == 'C') {
-          char* token = strtok((char*)esp_buffer, ",");
-          if (token != NULL && token[0] == 'C') {
-            char* ox_str = strtok(NULL, ",");
-            char* oy_str = strtok(NULL, ",");
-            char* oz_str = strtok(NULL, "\n");
-            if (ox_str && oy_str && oz_str) {
-              mag_offset_x = atof(ox_str);
-              mag_offset_y = atof(oy_str);
-              mag_offset_z = atof(oz_str);
-
-            // Automatically burn to Flash memory too!
+        else if (esp_parse_buffer[0] == 'B') {
+          if (current_state == STATE_DISARMED) {
             Flash_Data fd;
             fd.r_p = pid_roll.Kp;
             fd.r_i = pid_roll.Ki;
@@ -677,9 +708,49 @@ int main(void) {
             fd.mag_offset_y = mag_offset_y;
             fd.mag_offset_z = mag_offset_z;
             Flash_Save(&fd);
+          }
+        }
+        // Format C: C,mag_x,mag_y,mag_z (Update Offsets)
+        else if (esp_parse_buffer[0] == 'C') {
+          char* token = strtok((char*)esp_parse_buffer, ",");
+          if (token != NULL && token[0] == 'C') {
+            char* ox_str = strtok(NULL, ",");
+            char* oy_str = strtok(NULL, ",");
+            char* oz_str = strtok(NULL, "\n");
+            if (ox_str && oy_str && oz_str) {
+              mag_offset_x = atof(ox_str);
+              mag_offset_y = atof(oy_str);
+              mag_offset_z = atof(oz_str);
+
+            if (current_state == STATE_DISARMED) {
+              // Automatically burn to Flash memory too!
+              Flash_Data fd;
+              fd.r_p = pid_roll.Kp;
+              fd.r_i = pid_roll.Ki;
+              fd.r_d = pid_roll.Kd;
+              fd.r_f = pid_roll.Kf;
+              fd.p_p = pid_pitch.Kp;
+              fd.p_i = pid_pitch.Ki;
+              fd.p_d = pid_pitch.Kd;
+              fd.p_f = pid_pitch.Kf;
+              fd.y_p = pid_yaw.Kp;
+              fd.y_i = pid_yaw.Ki;
+              fd.y_d = pid_yaw.Kd;
+              fd.y_f = pid_yaw.Kf;
+              fd.mag_offset_x = mag_offset_x;
+              fd.mag_offset_y = mag_offset_y;
+              fd.mag_offset_z = mag_offset_z;
+              Flash_Save(&fd);
+            }
             }
           }
         }
+        // Format H: H (Heartbeat)
+        else if (esp_parse_buffer[0] == 'H') {
+            last_dashboard_time = current_time;
+        }
+        
+        esp_parsing = 0; // UNLOCK buffer
       }
 
       // --- SMART RADIO FAILSAFE ---
@@ -700,6 +771,15 @@ int main(void) {
       } else if (current_state == STATE_FAILSAFE) {
         // Radio connection has recovered!
         current_state = STATE_DISARMED;
+      }
+      
+      // --- DASHBOARD FAILSAFE ---
+      if (current_time - last_dashboard_time > 3000) {
+          // Ground Station Connection Lost!
+          if (current_mode == MODE_AUTO) {
+              // Abort autonomous waypoint mission if we lose the dashboard!
+              current_mode = MODE_RTL; 
+          }
       }
 
       // --- STICK ARMING LOGIC (And Hardware Button Backup) ---
@@ -902,10 +982,11 @@ int main(void) {
           }
 
           // Standard Betaflight Quad-X ("Props In") Motor Mixing
-          float m1 = throttle_output - pid_out_roll + pid_out_pitch + pid_out_yaw; // Rear Right (CW)
-          float m2 = throttle_output - pid_out_roll - pid_out_pitch - pid_out_yaw; // Front Right (CCW)
-          float m3 = throttle_output + pid_out_roll + pid_out_pitch - pid_out_yaw; // Rear Left (CCW)
-          float m4 = throttle_output + pid_out_roll - pid_out_pitch + pid_out_yaw; // Front Left (CW)
+          // Mapping: CH1(m1)=BL, CH2(m2)=BR, CH3(m3)=FL, CH4(m4)=FR
+          float m1 = throttle_output + pid_out_roll + pid_out_pitch - pid_out_yaw; // CH1: Rear Left (CCW)
+          float m2 = throttle_output - pid_out_roll + pid_out_pitch + pid_out_yaw; // CH2: Rear Right (CW)
+          float m3 = throttle_output + pid_out_roll - pid_out_pitch + pid_out_yaw; // CH3: Front Left (CW)
+          float m4 = throttle_output - pid_out_roll - pid_out_pitch - pid_out_yaw; // CH4: Front Right (CCW)
 
           // Limit PWM to prevent motors from stalling in mid-air
           // 1150us is the "Motor Idle Speed". It ensures motors never stop
@@ -1337,14 +1418,14 @@ static void BareMetal_ADC1_Init(void) {
   // 4. Calibrate ADC
   ADC1->CR &= ~ADC_CR_ADCALDIF; // Single-ended calibration
   ADC1->CR |= ADC_CR_ADCAL;
-  while (ADC1->CR & ADC_CR_ADCAL)
-    ; // Wait for calibration to finish
+  uint32_t timeout = 100000;
+  while ((ADC1->CR & ADC_CR_ADCAL) && timeout > 0) timeout--;
 
   // 5. Enable ADC
   ADC1->ISR |= ADC_ISR_ADRDY; // Clear ready flag
   ADC1->CR |= ADC_CR_ADEN;    // Enable ADC
-  while (!(ADC1->ISR & ADC_ISR_ADRDY))
-    ; // Wait for ready flag
+  timeout = 100000;
+  while (!(ADC1->ISR & ADC_ISR_ADRDY) && timeout > 0) timeout--;
 
   // 6. Configure Channel 10 (PC0)
   ADC1->PCSEL |= ADC_PCSEL_PCSEL_10; // Preselect channel 10
@@ -1360,8 +1441,9 @@ static void BareMetal_ADC1_Init(void) {
 
 static uint16_t BareMetal_ADC1_Read(void) {
   ADC1->CR |= ADC_CR_ADSTART; // Start conversion
-  while (!(ADC1->ISR & ADC_ISR_EOC))
-    ;                         // Wait for End Of Conversion
+  uint32_t timeout = 10000;
+  while (!(ADC1->ISR & ADC_ISR_EOC) && timeout > 0) timeout--;
+  if (timeout == 0) return 0; // Return 0 if timeout occurs
   uint16_t result = ADC1->DR; // Read Data
   ADC1->ISR |= ADC_ISR_EOC;   // Clear flag
   return result;

@@ -152,6 +152,9 @@ io.on('connection', (wsSocket) => {
         sendCommandToDrone(`C,${data.x},${data.y},${data.z}\n`);
     });
 
+    wsSocket.on('heartbeat', () => {
+        sendCommandToDrone(`H\n`);
+    });
 
 });
 

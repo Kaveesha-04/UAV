@@ -1,5 +1,6 @@
 #include "mpu6500.h"
 #include <math.h>
+#include "mahony.h"
 
 extern float Get_Mag_Heading(void);
 
@@ -125,13 +126,16 @@ void MPU6500_Read_Angles(SPI_HandleTypeDef *hspi, float dt) {
     Filtered_Accel_Y = (LPF_ALPHA * ay_comp) + ((1.0f - LPF_ALPHA) * Filtered_Accel_Y);
     Filtered_Accel_Z = (LPF_ALPHA * az_comp) + ((1.0f - LPF_ALPHA) * Filtered_Accel_Z);
 
-    // 3. Accel කෝණ සොයා Offset එක අඩු කිරීම
-    float Accel_Roll  = (atan2(Filtered_Accel_Y, Filtered_Accel_Z) * RAD_TO_DEG) - Accel_Roll_Offset;
-    float Accel_Pitch = (atan2(-Filtered_Accel_X, sqrt(Filtered_Accel_Y*Filtered_Accel_Y + Filtered_Accel_Z*Filtered_Accel_Z)) * RAD_TO_DEG) - Accel_Pitch_Offset;
+    // 3. Mahony IMU Update (Quaternions)
+    MahonyAHRSupdateIMU(Filtered_Gyro_X, Filtered_Gyro_Y, Filtered_Gyro_Z, Filtered_Accel_X, Filtered_Accel_Y, Filtered_Accel_Z, dt);
 
-    // 4. Complementary Filter for Roll and Pitch
-    Roll  = 0.98f * (Roll + Filtered_Gyro_X * dt) + 0.02f * Accel_Roll;
-    Pitch = 0.98f * (Pitch + Filtered_Gyro_Y * dt) + 0.02f * Accel_Pitch;
+    // 4. Convert quaternions to Euler angles (Roll, Pitch)
+    Roll = atan2f(q0*q1 + q2*q3, 0.5f - q1*q1 - q2*q2) * RAD_TO_DEG;
+    Pitch = asinf(-2.0f * (q1*q3 - q0*q2)) * RAD_TO_DEG;
+    
+    // Apply Accel offsets to the final Euler angles
+    Roll -= Accel_Roll_Offset;
+    Pitch -= Accel_Pitch_Offset;
     
     // 5. Absolute Yaw Filter using Magnetometer Heading
     extern uint8_t mag_type;

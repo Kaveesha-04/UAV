@@ -22,17 +22,22 @@ void QMC5883L_Init(I2C_HandleTypeDef *hi2c) {
     HAL_I2C_Mem_Write(hi2c, QMC5883L_ADDR, 0x09, 1, &data, 1, 100);
 }
 
+extern uint8_t i2c_error_count;
+
 void QMC5883L_Read(I2C_HandleTypeDef *hi2c) {
     uint8_t status = 0;
     if (HAL_I2C_Mem_Read(hi2c, QMC5883L_ADDR, 0x06, 1, &status, 1, 100) != HAL_OK) {
+        i2c_error_count++;
         return; // I2C Error
     }
     
     if (status & 0x01) { // Data Ready
         uint8_t raw[6];
         if (HAL_I2C_Mem_Read(hi2c, QMC5883L_ADDR, 0x00, 1, raw, 6, 100) != HAL_OK) {
+            i2c_error_count++;
             return;
         }
+        i2c_error_count = 0; // Reset on success
         
         mag_x = (int16_t)(raw[1] << 8 | raw[0]);
         mag_y = (int16_t)(raw[3] << 8 | raw[2]);
@@ -64,6 +69,7 @@ void QMC5883P_Init(I2C_HandleTypeDef *hi2c) {
 void QMC5883P_Read(I2C_HandleTypeDef *hi2c) {
     uint8_t status = 0;
     if (HAL_I2C_Mem_Read(hi2c, QMC5883P_ADDR, 0x09, 1, &status, 1, 100) != HAL_OK) {
+        i2c_error_count++;
         return; // I2C Error
     }
     
@@ -71,8 +77,10 @@ void QMC5883P_Read(I2C_HandleTypeDef *hi2c) {
         uint8_t raw[6];
         // Read 6 bytes starting from X LSB (0x01)
         if (HAL_I2C_Mem_Read(hi2c, QMC5883P_ADDR, 0x01, 1, raw, 6, 100) != HAL_OK) {
+            i2c_error_count++;
             return;
         }
+        i2c_error_count = 0; // Reset on success
         
         // QMC5883P is LSB first (X_LSB, X_MSB, Y_LSB, Y_MSB, Z_LSB, Z_MSB)
         mag_x = (int16_t)(raw[1] << 8 | raw[0]);
