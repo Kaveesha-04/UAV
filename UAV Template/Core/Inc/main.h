@@ -39,6 +39,9 @@ extern "C" {
 extern char esp_buffer[100];
 extern volatile uint8_t esp_string_ready;
 
+extern char usb_buffer[100];
+extern volatile uint8_t usb_string_ready;
+
 // Raw Magnetometer Data
 extern int16_t mag_x;
 extern int16_t mag_y;
