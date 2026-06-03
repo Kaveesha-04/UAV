@@ -86,6 +86,8 @@ async function connectToSTM32Serial() {
                         }
                     } catch (err) {
                         // Ignore parse errors (partial frames)
+                        console.log("[USB] JSON Parse Error:", err.message);
+                        console.log("[USB] Raw String:", jsonString.trim());
                     }
                 }
             });
