@@ -94,7 +94,7 @@ uint8_t usb_buf_index = 0;
 volatile uint8_t usb_string_ready = 0;
 
 // Magnetometer Type and Data
-uint8_t mag_type = 0; // 0 = None, 0x0D = QMC5883L, 0x1E = HMC5883L
+uint8_t mag_type = 0; // 0 = None, 0x0D = QMC5883L, 0x1E = HMC5883L, 0x2C = QMC5883P
 int16_t mag_x = 0, mag_y = 0, mag_z = 0;
 float mag_offset_x = 0.0f, mag_offset_y = 0.0f, mag_offset_z = 0.0f;
 
@@ -158,7 +158,7 @@ uint16_t motor1, motor2, motor3, motor4;
 float setpoint_roll = 0.0f;
 float setpoint_pitch = 0.0f;
 float setpoint_yaw = 0.0f;
-float base_throttle = 1000.0f; // Default to 1000 (Motors OFF) so dashboard can arm
+float base_throttle = 1100.0f; // Default to 1100 (Motors OFF) so dashboard can arm
 
 // Flight State Machine
 typedef enum {
@@ -192,6 +192,9 @@ uint32_t last_button_press = 0; // For debounce
 struct Data_Package nrf_data;
 uint32_t last_radio_time = 0;
 uint32_t last_dashboard_time = 0;
+uint32_t last_sig_time = 0;
+uint16_t sig_pkt_count = 0;
+uint8_t nrf_sig_strength = 0;
 
 uint8_t i2c_error_count = 0; // Tracks consecutive I2C failures
 
@@ -221,36 +224,8 @@ char gps_parse_buffer[100];
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-// --- JOYSTICK CALIBRATION SETTINGS ---
-// If your transmitter sends 0-1023, the middle is usually around 512.
-// Adjust the _MID values to whatever your transmitter sends when the sticks are
-// perfectly centered.
-#define JOY_PITCH_MIN 0
-#define JOY_PITCH_MID 626
-#define JOY_PITCH_MAX 1023
-
-#define JOY_ROLL_MIN 0
-#define JOY_ROLL_MID 625
-#define JOY_ROLL_MAX 1023
-
-#define JOY_YAW_MIN 0
-#define JOY_YAW_MID 625
-#define JOY_YAW_MAX 1023
-
-// Helper function to map joystick values so the exact middle is 0
-int16_t map_joystick(int16_t val, int16_t min_val, int16_t mid_val,
-                     int16_t max_val) {
-  if (val <= mid_val) {
-    if (mid_val == min_val)
-      return 0; // Prevent divide by zero and extreme inputs
-    return (int16_t)((((float)(val - min_val) / (mid_val - min_val)) * 500.0f) -
-                     500.0f);
-  } else {
-    if (max_val == mid_val)
-      return 0; // Prevent divide by zero and extreme inputs
-    return (int16_t)(((float)(val - mid_val) / (max_val - mid_val)) * 500.0f);
-  }
-}
+// --- JOYSTICK CALIBRATION MOVED TO ESP32 REMOTE ---
+// The remote now handles midpoint mapping and transmits a clean -500 to 500 value.
 
 // I2C Recovery Function to unbrick a stuck slave
 void I2C1_Recover(void) {
@@ -385,16 +360,13 @@ int main(void) {
   MX_TIM4_Init();
   BareMetal_ADC1_Init();
   /* USER CODE BEGIN 2 */
-
-  // 1. Start Motor PWM Timers
+  
+  // Start Motor PWM Timers and ensure motors are completely OFF (Idle/Disarmed)
+  Set_Motor_PWM(1100, 1100, 1100, 1100);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
-
-  // (ESC Calibration Sequence Removed)
-  // Normal startup: set motors to completely OFF (1000us) to ensure safety.
-  Set_Motor_PWM(1000, 1000, 1000, 1000);
 
   // 2. Initialize MPU6500
   MPU6500_Init(&hspi2);
@@ -476,6 +448,14 @@ int main(void) {
       current_time = HAL_GetTick();
       dt = 0.004f; // Perfect 250Hz timing guaranteed by ISR
 
+      // Calculate NRF Signal Frequency (Packets per Second)
+      if (current_time - last_sig_time >= 1000) {
+        nrf_sig_strength = (sig_pkt_count * 100) / 50; // max 50 pkts/sec
+        if (nrf_sig_strength > 100) nrf_sig_strength = 100;
+        sig_pkt_count = 0;
+        last_sig_time = current_time;
+      }
+
       // 1. Read Battery Voltage Early
       uint16_t adc_val = BareMetal_ADC1_Read();
       // Calculate voltage (Assuming 16-bit ADC, 3.3V Ref, and 11:1 Voltage
@@ -494,18 +474,11 @@ int main(void) {
 
       // --- NRF24L01 RADIO PROCESSING ---
       if (NRF_DataAvailable()) {
+        sig_pkt_count++;
         NRF_ReadPayload(&nrf_data, sizeof(nrf_data));
         last_radio_time = current_time;
 
-        // Map raw joystick values to -500 to 500 range IN PLACE so telemetry
-        // also gets centered values
-        nrf_data.pitch = map_joystick(nrf_data.pitch, JOY_PITCH_MIN,
-                                      JOY_PITCH_MID, JOY_PITCH_MAX);
-        nrf_data.roll = map_joystick(nrf_data.roll, JOY_ROLL_MIN, JOY_ROLL_MID,
-                                     JOY_ROLL_MAX);
-        nrf_data.yaw =
-            map_joystick(nrf_data.yaw, JOY_YAW_MIN, JOY_YAW_MID, JOY_YAW_MAX);
-
+        // Remote sends natively mapped values from -500 to 500
         int16_t joy_pitch = nrf_data.pitch;
         int16_t joy_roll = nrf_data.roll;
         int16_t joy_yaw = nrf_data.yaw;
@@ -794,7 +767,7 @@ int main(void) {
           if (base_throttle <= 1150.0f) {
             // Drone was idling on the ground. Disarm instantly for safety!
             current_state = STATE_FAILSAFE;
-            base_throttle = 1000.0f;
+            base_throttle = 1100.0f;
           } else if (gps_fix > 0 && home_lat != 0.0f) {
             current_mode = MODE_RTL; // Fly home safely
           } else {
@@ -804,7 +777,7 @@ int main(void) {
           }
         } else {
           current_state = STATE_FAILSAFE; // Disarmed, just stay failsafe
-          base_throttle = 1000.0f;
+          base_throttle = 1100.0f;
         }
       } else if (current_state == STATE_FAILSAFE) {
         // Radio connection has recovered!
@@ -938,12 +911,18 @@ int main(void) {
           // identical idle
           Reset_PID_Integrals(&pid_roll, &pid_pitch, &pid_yaw);
           Reset_PID_Integrals(&pid_alt, &pid_gps_pitch, &pid_gps_roll);
-          motor1 = 1000; // User requested ZERO SPIN when armed at zero throttle
-          motor2 = 1000;
-          motor3 = 1000;
-          motor4 = 1000;
+          motor1 = 1100; // User requested ZERO SPIN when armed at zero throttle
+          motor2 = 1100;
+          motor3 = 1100;
+          motor4 = 1100;
         } else {
           // ACTIVE FLIGHT MODE
+
+          // Map physical throttle [1120, 2000] to full motor output range [1445, 2000]
+          // This bypasses the low-throttle "tipping zone" and gives full stick resolution!
+          float mapped_throttle = 1445.0f + ((base_throttle - 1120.0f) / (2000.0f - 1120.0f)) * (2000.0f - 1445.0f);
+          if (mapped_throttle > 2000.0f) mapped_throttle = 2000.0f;
+          if (mapped_throttle < 1445.0f) mapped_throttle = 1445.0f;
 
           // Calculate TPA factor (1.0 = full PID, < 1.0 = reduced PID)
           float tpa_factor = 1.0f;
@@ -951,8 +930,8 @@ int main(void) {
           float tpa_max_reduction =
               0.3f; // At max throttle (2000), reduce P and D by 30%
 
-          if (base_throttle > tpa_breakpoint) {
-            tpa_factor = 1.0f - ((base_throttle - tpa_breakpoint) /
+          if (mapped_throttle > tpa_breakpoint) {
+            tpa_factor = 1.0f - ((mapped_throttle - tpa_breakpoint) /
                                  (2000.0f - tpa_breakpoint)) *
                                     tpa_max_reduction;
             if (tpa_factor < 0.1f)
@@ -961,7 +940,7 @@ int main(void) {
 
           // 1. Altitude Hold Override
           float current_altitude = BMP280_GetAltitude();
-          float throttle_output = base_throttle;
+          float throttle_output = mapped_throttle;
           if (alt_hold_active) {
             float alt_correction = PID_Compute(&pid_alt, target_altitude,
                                                current_altitude, dt, 1.0f);
@@ -1072,10 +1051,10 @@ int main(void) {
         // DISARMED or FAILSAFE Mode
         Reset_PID_Integrals(&pid_roll, &pid_pitch,
                             &pid_yaw); // Prevent mathematical buildup
-        motor1 = 1000;
-        motor2 = 1000;
-        motor3 = 1000;
-        motor4 = 1000;
+        motor1 = 1100;
+        motor2 = 1100;
+        motor3 = 1100;
+        motor4 = 1100;
       }
 
       // 5. Output to motors
@@ -1085,10 +1064,10 @@ int main(void) {
         // DISARMED or FAILSAFE Mode
         Reset_PID_Integrals(&pid_roll, &pid_pitch,
                             &pid_yaw); // Prevent mathematical buildup
-        motor1 = 1000;                 // Completely stop motors when disarmed
-        motor2 = 1000;
-        motor3 = 1000;
-        motor4 = 1000;
+        motor1 = 1100;                 // Completely stop motors when disarmed
+        motor2 = 1100;
+        motor3 = 1100;
+        motor4 = 1100;
         Set_Motor_PWM(motor1, motor2, motor3,
                       motor4); // CRITICAL: Actually send the off signal!
       }
@@ -1122,7 +1101,7 @@ int main(void) {
             "%02d,%d."
             "%02d,%d.%02d],\"pid_y\":[%d.%02d,%d.%02d,%d.%02d,%d.%02d],\"md\":%"
             "d,\"mx\":%d,"
-            "\"my\":%d,\"mz\":%d,\"ry\":%d,\"rp\":%d,\"rr\":%d,\"arm\":%d}\n",
+            "\"my\":%d,\"mz\":%d,\"ry\":%d,\"rp\":%d,\"rr\":%d,\"arm\":%d,\"sig\":%d}\n",
             (int)battery_voltage, (int)(battery_voltage * 100) % 100, s_r,
             (int)fabsf(roll_actual), (int)(fabsf(roll_actual) * 10) % 10, s_p,
             (int)fabsf(pitch_actual), (int)(fabsf(pitch_actual) * 10) % 10, s_y,
@@ -1146,7 +1125,7 @@ int main(void) {
             (int)(pid_yaw.Kd * 100) % 100, (int)pid_yaw.Kf,
             (int)(pid_yaw.Kf * 100) % 100, (int)current_mode, mag_x, mag_y,
             mag_z, nrf_data.yaw, nrf_data.pitch, nrf_data.roll,
-            (current_state == STATE_ARMED ? 1 : 0));
+            (current_state == STATE_ARMED ? 1 : 0), (int)nrf_sig_strength);
 
         // Send to USB (Serial Monitor)
         CDC_Transmit_FS(uart_buf, strlen((char *)uart_buf));
@@ -1675,7 +1654,7 @@ static void MX_GPIO_Init(void) {
   HAL_GPIO_WritePin(LED_STATUS_GPIO_Port, LED_STATUS_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(NRF_CSN_GPIO_Port, NRF_CSN_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(NRF_CSN_GPIO_Port, NRF_CSN_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(NRF_CE_GPIO_Port, NRF_CE_Pin, GPIO_PIN_RESET);

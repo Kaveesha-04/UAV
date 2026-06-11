@@ -197,6 +197,19 @@ socket.on('telemetry', (data) => {
         }
     }
     
+    // NRF Signal Strength Update
+    if (data.sig !== undefined) {
+        const sigSpan = document.getElementById('val-sig');
+        sigSpan.innerText = 'SIG: ' + data.sig + '%';
+        if (data.sig > 80) {
+            sigSpan.style.color = '#10b981'; // Green
+        } else if (data.sig > 40) {
+            sigSpan.style.color = '#fb923c'; // Orange
+        } else {
+            sigSpan.style.color = '#f43f5e'; // Red
+        }
+    }
+    
     // Engine Power
     if (data.t !== undefined) {
         document.getElementById('val-throttle').innerText = data.t;
