@@ -43,6 +43,9 @@ Data_Package data;
 #define ADC_PITCH_MID 10750
 #define ADC_ROLL_MID 10750
 
+unsigned long last_oled_update = 0;
+unsigned long last_tx_time = 0;
+
 // Helper function to map joystick values so the exact middle is 0
 int16_t map_joystick(int16_t val, int16_t min_val, int16_t mid_val, int16_t max_val) {
   if (val <= mid_val) {
@@ -84,6 +87,10 @@ void setup() {
   // Set ADC gain to 1x (Range +/- 4.096V)
   // This is perfect for 3.3V joystick signals
   ads.setGain(GAIN_ONE);
+  
+  // Speed up ADS1115 from default 128 SPS to 860 SPS 
+  // to eliminate the 32ms blocking read delay in the loop!
+  ads.setDataRate(RATE_ADS1115_860SPS);
 
   // Initialize SPI for NRF24
   // SCK = 18, MISO = 19, MOSI = 23
@@ -99,8 +106,8 @@ void setup() {
   }
 
   radio.openWritingPipe(address);
-  radio.setPALevel(RF24_PA_LOW); // Changed to LOW to prevent voltage dropouts!
-  radio.setDataRate(RF24_2MBPS); // Reverted to 2Mbps to match working config
+  radio.setPALevel(RF24_PA_MAX); // Max power for best range (ensure good 3.3V supply!)
+  radio.setDataRate(RF24_250KBPS); // 250kbps gives significantly better range than 2Mbps
   radio.setChannel(76);          // Reverted to 76 (default) to match working config
   radio.setPayloadSize(sizeof(Data_Package)); // FORCE 8-byte payload to match STM32!
   radio.stopListening(); // Set as Transmitter
@@ -109,66 +116,71 @@ void setup() {
 }
 
 void loop() {
-  // Read raw 16-bit values from the ADS1115 ADC
-  int16_t raw_yaw = ads.readADC_SingleEnded(0);      // Vrx - A0
-  int16_t raw_throttle = ads.readADC_SingleEnded(1); // Vry - A1
-  int16_t raw_pitch = ads.readADC_SingleEnded(2);    // Vry - A2
-  int16_t raw_roll = ads.readADC_SingleEnded(3);     // Vrx - A3
+  unsigned long current_time = millis();
 
-  // Map the raw ADC values to the formats expected by the STM32 Firmware
-  
-  // Throttle: 1000 to 2000
-  data.throttle = map(raw_throttle, ADC_MIN, ADC_MAX, 1000, 2000);
-  data.throttle = constrain(data.throttle, 1000, 2000);
+  // Enforce a strict 50Hz update rate (20ms) for NRF transmission
+  if (current_time - last_tx_time >= 20) {
+    last_tx_time = current_time;
 
-  // Yaw: -500 to 500
-  data.yaw = map_joystick(raw_yaw, ADC_MIN, ADC_YAW_MID, ADC_MAX);
-  data.yaw = constrain(data.yaw, -500, 500);
+    // Read raw 16-bit values from the ADS1115 ADC
+    int16_t raw_yaw = ads.readADC_SingleEnded(0);      // Vrx - A0
+    int16_t raw_throttle = ads.readADC_SingleEnded(1); // Vry - A1
+    int16_t raw_pitch = ads.readADC_SingleEnded(2);    // Vry - A2
+    int16_t raw_roll = ads.readADC_SingleEnded(3);     // Vrx - A3
 
-  // Pitch: hardcoded to 0 since joystick is removed
-  // data.pitch = map_joystick(raw_pitch, ADC_MIN, ADC_PITCH_MID, ADC_MAX);
-  // data.pitch = constrain(data.pitch, -500, 500);
-  data.pitch = 0;
+    // Map the raw ADC values to the formats expected by the STM32 Firmware
+    
+    // Throttle: 1000 to 2000
+    data.throttle = map(raw_throttle, ADC_MIN, ADC_MAX, 1000, 2000);
+    data.throttle = constrain(data.throttle, 1000, 2000);
 
-  // Roll: hardcoded to 0 since joystick is removed
-  // data.roll = map_joystick(raw_roll, ADC_MIN, ADC_ROLL_MID, ADC_MAX);
-  // data.roll = constrain(data.roll, -500, 500);
-  data.roll = 0;
+    // Yaw: -500 to 500
+    data.yaw = map_joystick(raw_yaw, ADC_MIN, ADC_YAW_MID, ADC_MAX);
+    data.yaw = constrain(data.yaw, -500, 500);
 
-  // Send the payload via NRF24
-  bool success = radio.write(&data, sizeof(Data_Package));
+    // Pitch: hardcoded to 0 since joystick is removed
+    data.pitch = 0;
 
-  if (success) {
-    Serial.printf("SENT OK | T: %d | Y: %d | P: %d | R: %d\n", 
-                  data.throttle, data.yaw, data.pitch, data.roll);
-  } else {
-    Serial.println("TX Failed - Check NRF24 connections on Drone");
+    // Roll: hardcoded to 0 since joystick is removed
+    data.roll = 0;
+
+    // Send the payload via NRF24
+    bool success = radio.write(&data, sizeof(Data_Package));
+
+    if (success) {
+      Serial.printf("SENT OK | T: %d | Y: %d | P: %d | R: %d\n", 
+                    data.throttle, data.yaw, data.pitch, data.roll);
+    } else {
+      Serial.println("TX Failed - Check NRF24 connections on Drone");
+    }
+
+    // Update OLED Display only 4 times a second (every 250ms)
+    // I2C displays take ~30ms to update, which would bottleneck our 50Hz radio transmission!
+    if (current_time - last_oled_update >= 250) {
+      last_oled_update = current_time;
+      
+      display.clearDisplay();
+      display.setCursor(0, 0);
+      display.setTextSize(2);
+      display.println("UAV REMOTE");
+      
+      display.setTextSize(1);
+      display.setCursor(0, 20);
+      display.printf("THR: %-4d", data.throttle);
+      
+      display.setCursor(0, 34);
+      display.printf("YAW: %-4d  PIT: %-4d", data.yaw, data.pitch);
+      
+      display.setCursor(0, 46);
+      display.printf("ROL: %-4d", data.roll);
+      
+      display.setCursor(0, 56);
+      if (success) {
+        display.println("NRF: TX OK");
+      } else {
+        display.println("NRF: TX FAIL");
+      }
+      display.display();
+    }
   }
-
-  // Update OLED Display
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.setTextSize(2);
-  display.println("UAV REMOTE");
-  
-  display.setTextSize(1);
-  display.setCursor(0, 20);
-  display.printf("THR: %-4d", data.throttle);
-  
-  display.setCursor(0, 34);
-  display.printf("YAW: %-4d  PIT: %-4d", data.yaw, data.pitch);
-  
-  display.setCursor(0, 46);
-  display.printf("ROL: %-4d", data.roll);
-  
-  display.setCursor(0, 56);
-  if (success) {
-    display.println("NRF: TX OK");
-  } else {
-    display.println("NRF: TX FAIL");
-  }
-  display.display();
-
-  // 50Hz update rate (20ms delay) to match drone's receiving speed
-  delay(20); 
 }
