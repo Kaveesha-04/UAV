@@ -105,8 +105,23 @@ float Get_Mag_Heading(void) {
   // Apply Hard Iron Offsets (Calibration)
   float x = (float)mag_x - mag_offset_x;
   float y = (float)mag_y - mag_offset_y;
+  float z = (float)mag_z - mag_offset_z;
 
-  float heading_rad = atan2f(y, x);
+  // Get current attitude for tilt compensation
+  float roll = MPU6500_GetRoll() * (M_PI / 180.0f);
+  float pitch = MPU6500_GetPitch() * (M_PI / 180.0f);
+
+  // Pre-compute trig functions
+  float cos_r = cosf(roll);
+  float sin_r = sinf(roll);
+  float cos_p = cosf(pitch);
+  float sin_p = sinf(pitch);
+
+  // Tilt compensation formula to flatten the 3D magnetometer vector
+  float X_h = x * cos_p + y * sin_r * sin_p + z * cos_r * sin_p;
+  float Y_h = y * cos_r - z * sin_r;
+
+  float heading_rad = atan2f(Y_h, X_h);
 
   // Magnetic Declination can be added here
   // heading_rad += declination;
@@ -134,7 +149,7 @@ PID_Controller pid_yaw = {1.0f, 0.0f, 0.0f, 0.0f,   0.0f,
 
 // PID Controllers (Altitude and GPS)
 PID_Controller pid_alt = {
-    1.5f, 0.5f, 0.1f, 0.0f,   0.0f,
+    50.0f, 10.0f, 5.0f, 0.0f,   0.0f,
     0.0f, 0.0f, 0.0f, 300.0f, -200.0f}; // Output is throttle override
 PID_Controller pid_gps_pitch = {
     0.05f, 0.0f, 0.02f, 0.0f,  0.0f,
@@ -918,11 +933,18 @@ int main(void) {
         } else {
           // ACTIVE FLIGHT MODE
 
-          // Map physical throttle [1120, 2000] to full motor output range [1445, 2000]
+          // Map physical throttle [1120, 2000] to full motor output range [1500, 2000]
           // This bypasses the low-throttle "tipping zone" and gives full stick resolution!
-          float mapped_throttle = 1445.0f + ((base_throttle - 1120.0f) / (2000.0f - 1120.0f)) * (2000.0f - 1445.0f);
+          float mapped_throttle = 1500.0f + ((base_throttle - 1120.0f) / (2000.0f - 1120.0f)) * (2000.0f - 1500.0f);
           if (mapped_throttle > 2000.0f) mapped_throttle = 2000.0f;
-          if (mapped_throttle < 1445.0f) mapped_throttle = 1445.0f;
+          if (mapped_throttle < 1500.0f) mapped_throttle = 1500.0f;
+
+          // Ground Idle Anti-Windup
+          // Prevent I-term accumulation if the physical throttle stick is barely pushed
+          if (base_throttle < 1150.0f) {
+             Reset_PID_Integrals(&pid_roll, &pid_pitch, &pid_yaw);
+             Reset_PID_Integrals(&pid_alt, &pid_gps_pitch, &pid_gps_roll);
+          }
 
           // Calculate TPA factor (1.0 = full PID, < 1.0 = reduced PID)
           float tpa_factor = 1.0f;
@@ -945,7 +967,7 @@ int main(void) {
             float alt_correction = PID_Compute(&pid_alt, target_altitude,
                                                current_altitude, dt, 1.0f);
             throttle_output =
-                1500.0f + alt_correction; // Hover throttle is ~1500
+                1600.0f + alt_correction; // Hover throttle is ~1600
           }
 
           // 2. GPS Navigation Override
@@ -972,14 +994,14 @@ int main(void) {
                 sinf(rad_angle) * dist; // Distance to move right
 
             // Cap maximum distance/velocity pull
-            if (target_vel_x > 10.0f)
-              target_vel_x = 10.0f;
-            if (target_vel_x < -10.0f)
-              target_vel_x = -10.0f;
-            if (target_vel_y > 10.0f)
-              target_vel_y = 10.0f;
-            if (target_vel_y < -10.0f)
-              target_vel_y = -10.0f;
+            if (target_vel_x > 400.0f)
+              target_vel_x = 400.0f;
+            if (target_vel_x < -400.0f)
+              target_vel_x = -400.0f;
+            if (target_vel_y > 400.0f)
+              target_vel_y = 400.0f;
+            if (target_vel_y < -400.0f)
+              target_vel_y = -400.0f;
 
             // Use GPS PID to generate pitch/roll angle overrides
             // Assuming current velocity is 0 for basic position hold logic
@@ -1025,22 +1047,25 @@ int main(void) {
           // spinning while the drone is actively flying, even if the PID loop
           // tries to lower them.
 
-          if (m1 < idle_speed)
-            m1 = idle_speed;
-          if (m1 > 1940.0f)
-            m1 = 1940.0f;
-          if (m2 < idle_speed)
-            m2 = idle_speed;
-          if (m2 > 1940.0f)
-            m2 = 1940.0f;
-          if (m3 < idle_speed)
-            m3 = idle_speed;
-          if (m3 > 1940.0f)
-            m3 = 1940.0f;
-          if (m4 < idle_speed)
-            m4 = idle_speed;
-          if (m4 > 1940.0f)
-            m4 = 1940.0f;
+          // AirMode Mix Scaling - Prevent loss of rotational authority at zero throttle
+          float min_motor = m1;
+          if (m2 < min_motor) min_motor = m2;
+          if (m3 < min_motor) min_motor = m3;
+          if (m4 < min_motor) min_motor = m4;
+
+          if (min_motor < idle_speed) {
+            float boost = idle_speed - min_motor;
+            m1 += boost;
+            m2 += boost;
+            m3 += boost;
+            m4 += boost;
+          }
+
+          // Apply upper constraints
+          if (m1 > 1940.0f) m1 = 1940.0f;
+          if (m2 > 1940.0f) m2 = 1940.0f;
+          if (m3 > 1940.0f) m3 = 1940.0f;
+          if (m4 > 1940.0f) m4 = 1940.0f;
 
           motor1 = (uint16_t)m1;
           motor2 = (uint16_t)m2;
@@ -1130,8 +1155,8 @@ int main(void) {
         // Send to USB (Serial Monitor)
         CDC_Transmit_FS(uart_buf, strlen((char *)uart_buf));
 
-        // Send to ESP32 Telemetry (UART2)
-        HAL_UART_Transmit(&huart2, uart_buf, strlen((char *)uart_buf), 50);
+        // Send to ESP32 Telemetry (UART2) - Non-blocking IT mode
+        HAL_UART_Transmit_IT(&huart2, uart_buf, strlen((char *)uart_buf));
       }
     }
   }

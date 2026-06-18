@@ -21,7 +21,8 @@ void Flash_Save(Flash_Data* data) {
     
     // The STM32H7 programs flash in 256-bit (32-byte) Flash Words.
     // Our struct size is 52 bytes. We pad it to 64 bytes.
-    uint8_t buffer[64] = {0};
+    // Explicit 32-byte alignment prevents AXI bus HardFaults during Flash writes.
+    __attribute__((aligned(32))) uint8_t buffer[64] = {0};
     data->magic = EEPROM_MAGIC;
     memcpy(buffer, data, sizeof(Flash_Data));
     

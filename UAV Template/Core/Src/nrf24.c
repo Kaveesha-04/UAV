@@ -60,8 +60,8 @@ void NRF_Init_RX(void) {
     // Set RF Channel to 76 (Default Arduino RF24 Channel)
     NRF_Write_Reg(NRF_RF_CH, 76);
     
-    // Set Data Rate 2Mbps, Power 0dBm
-    NRF_Write_Reg(NRF_RF_SETUP, 0x0E);
+    // Set Data Rate 250kbps, Power 0dBm (Max Power)
+    NRF_Write_Reg(NRF_RF_SETUP, 0x26);
     
     // Set Payload Size for Pipe 0 (8 Bytes)
     NRF_Write_Reg(NRF_RX_PW_P0, sizeof(struct Data_Package));
