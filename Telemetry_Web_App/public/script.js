@@ -42,7 +42,14 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let droneMarker = L.marker([0, 0]).addTo(map);
-let heatLayer = L.heatLayer([], {radius: 35, blur: 20, maxZoom: 17, max: 1.0}).addTo(map);
+let surveyPathLayer = L.layerGroup().addTo(map);
+let heatLayer = L.heatLayer([], {
+    radius: 35, 
+    blur: 20, 
+    maxZoom: 17, 
+    max: 1.0,
+    gradient: {0.4: 'lime', 0.65: 'yellow', 1.0: 'red'}
+}).addTo(map);
 let mapInitialized = false;
 let isSurveyMode = false;
 let magBaseline = 0;
@@ -51,6 +58,7 @@ function toggleHeatmap() {
     isSurveyMode = document.getElementById('heatmap-toggle').checked;
     if (!isSurveyMode) {
         heatLayer.setLatLngs([]); // Clear map when toggled off
+        surveyPathLayer.clearLayers(); // Clear path dots
     }
 }
 
@@ -294,6 +302,15 @@ socket.on('telemetry', (data) => {
             if (variance > 20) { 
                 heatLayer.addLatLng([data.glat, data.glon, intensity]);
             }
+            
+            // Draw path dots
+            L.circleMarker([data.glat, data.glon], {
+                radius: 2,
+                color: '#0ea5e9',
+                fillColor: '#0ea5e9',
+                fillOpacity: 1,
+                stroke: false
+            }).addTo(surveyPathLayer);
         }
     }
     
