@@ -11,6 +11,7 @@
     <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 </head>
 <body>
     <div class="dashboard">
@@ -94,7 +95,18 @@
             <!-- Middle Column: Motor Diagnostics & Chart -->
             <div class="col-main">
                 <div class="glass-panel widget-map">
-                    <h2>Live GPS Map</h2>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h2 style="margin: 0;">Live GPS Map</h2>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <span id="survey-baseline-val" style="font-size: 0.8em; color: var(--cyan); display: none;">Baseline: 0.00 µT</span>
+                            <button class="btn-save" id="btn-baseline" style="margin: 0; padding: 4px 10px; font-size: 0.8em; background: rgba(14, 165, 233, 0.2); border-color: var(--cyan); color: var(--cyan);" onclick="setMagneticBaseline()">SET BASELINE</button>
+                            <label class="toggle-switch" style="margin: 0;">
+                                <input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmap()">
+                                <span class="slider round"></span>
+                            </label>
+                            <span style="font-size: 0.8em; color: #94a3b8; font-weight: 600;">MAGNETIC SURVEY</span>
+                        </div>
+                    </div>
                     <div id="map" style="width: 100%; height: 380px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;"></div>
                 </div>
                 

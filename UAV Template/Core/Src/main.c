@@ -811,29 +811,21 @@ int main(void) {
       // --- STICK ARMING LOGIC (And Hardware Button Backup) ---
       static uint32_t stick_cmd_timer = 0;
       if (base_throttle <= 1120.0f) { // Adjusted for ESP32 min throttle of 1100
-        // Stick Arm: Throttle Down + Yaw Full Right (> 400)
-        if (nrf_data.yaw > 400 && current_state != STATE_ARMED) {
-          if (stick_cmd_timer == 0)
-            stick_cmd_timer = current_time;
-          else if (current_time - stick_cmd_timer > 1000) { // Hold for 1 second
+        // New arming method: Hold throttle down for 4 seconds
+        if (stick_cmd_timer == 0) {
+          stick_cmd_timer = current_time;
+        } else if (current_time - stick_cmd_timer > 4000) { // Hold for 4 seconds
+          if (current_state != STATE_ARMED) {
             current_state = STATE_ARMED;
             setpoint_yaw = yaw_actual;
             home_lat = gps_lat; // Lock home position
             home_lon = gps_lon;
-            stick_cmd_timer = 0;
-          }
-        }
-        // Stick Disarm: Throttle Down + Yaw Full Left (< -400)
-        else if (nrf_data.yaw < -400 && current_state == STATE_ARMED) {
-          if (stick_cmd_timer == 0)
-            stick_cmd_timer = current_time;
-          else if (current_time - stick_cmd_timer > 1000) { // Hold for 1 second
+          } else {
             current_state = STATE_DISARMED;
             Reset_PID_Integrals(&pid_roll, &pid_pitch, &pid_yaw);
-            stick_cmd_timer = 0;
           }
-        } else {
-          stick_cmd_timer = 0;
+          // Reset timer so it takes another 4 seconds to toggle again
+          stick_cmd_timer = current_time; 
         }
       } else {
         stick_cmd_timer = 0;
@@ -976,7 +968,7 @@ int main(void) {
                 GPS_Distance(gps_lat, gps_lon, target_gps_lat, target_gps_lon);
             float bearing =
                 GPS_Bearing(gps_lat, gps_lon, target_gps_lat, target_gps_lon);
-            float heading = Get_Mag_Heading();
+            float, heading = Get_Mag_Heading();
 
             // Convert bearing and heading to relative angle
             float relative_angle = bearing - heading;
