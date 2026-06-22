@@ -123,8 +123,10 @@ float Get_Mag_Heading(void) {
 
   float heading_rad = atan2f(Y_h, X_h);
 
-  // Magnetic Declination can be added here
-  // heading_rad += declination;
+  // Magnetic Declination for Katubedda (-1 degree 56 minutes)
+  // -1° 56' = -1.9333 degrees
+  float declination = -1.9333f * (M_PI / 180.0f);
+  heading_rad += declination;
 
   if (heading_rad < 0)
     heading_rad += 2 * M_PI;
@@ -425,7 +427,6 @@ int main(void) {
   Flash_Data flash_mem;
   if (Flash_Load(&flash_mem)) {
     // Apply saved PID values
-    /*
     pid_roll.Kp = flash_mem.r_p;
     pid_roll.Ki = flash_mem.r_i;
     pid_roll.Kd = flash_mem.r_d;
@@ -443,7 +444,6 @@ int main(void) {
     mag_offset_x = flash_mem.mag_offset_x;
     mag_offset_y = flash_mem.mag_offset_y;
     mag_offset_z = flash_mem.mag_offset_z;
-    */
   }
 
   current_state = STATE_DISARMED; // Boot sequence finished, drone is safe
@@ -473,9 +473,9 @@ int main(void) {
 
       // 1. Read Battery Voltage Early
       uint16_t adc_val = BareMetal_ADC1_Read();
-      // Calculate voltage (Assuming 16-bit ADC, 3.3V Ref, and 11:1 Voltage
-      // Divider)
-      float battery_voltage = ((float)adc_val / 65535.0f) * 3.3f * 11.0f;
+      // Calculate voltage (Assuming 16-bit ADC, 3.3V Ref, and 4:1 Voltage
+      // Divider using four 1kOhm resistors: 3k High, 1k Low)
+      float battery_voltage = ((float)adc_val / 65535.0f) * 3.3f * 4.0f;
       if (adc_val == 0)
         battery_voltage = 12.6f; // Fallback if ADC times out
 
