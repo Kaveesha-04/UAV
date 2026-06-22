@@ -34,29 +34,39 @@ const telemetryChart = new Chart(ctx, {
     }
 });
 
-// Initialize Leaflet Map
-const map = L.map('map').setView([0, 0], 2);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// Initialize Leaflet Map (maxZoom increased to 24 for high precision)
+const map = L.map('map', { maxZoom: 24 }).setView([0, 0], 2);
+let tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
-    className: 'map-tiles'
+    className: 'map-tiles',
+    maxNativeZoom: 19,
+    maxZoom: 24
 }).addTo(map);
 
 let droneMarker = L.marker([0, 0]).addTo(map);
-let surveyPathLayer = L.layerGroup().addTo(map);
+let surveyPathLayer = L.featureGroup().addTo(map);
 let heatLayer = L.heatLayer([], {
     radius: 35, 
     blur: 20, 
-    maxZoom: 17, 
+    maxZoom: 24, 
     max: 1.0,
     gradient: {0.4: 'lime', 0.65: 'yellow', 1.0: 'red'}
 }).addTo(map);
 let mapInitialized = false;
 let isSurveyMode = false;
 let magBaseline = 0;
+let lastFitBoundsTime = 0;
 
 function toggleHeatmap() {
     isSurveyMode = document.getElementById('heatmap-toggle').checked;
-    if (!isSurveyMode) {
+    if (isSurveyMode) {
+        // Hide the map tiles to show only the survey data
+        map.removeLayer(tileLayer);
+        document.getElementById('map').style.background = 'var(--bg-color)'; 
+    } else {
+        // Restore map tiles
+        map.addLayer(tileLayer);
+        document.getElementById('map').style.background = '';
         heatLayer.setLatLngs([]); // Clear map when toggled off
         surveyPathLayer.clearLayers(); // Clear path dots
     }
@@ -311,6 +321,15 @@ socket.on('telemetry', (data) => {
                 fillOpacity: 1,
                 stroke: false
             }).addTo(surveyPathLayer);
+            
+            // Auto-fit the map to show the entire survey path
+            let now = Date.now();
+            if (now - lastFitBoundsTime > 1000) {
+                if (surveyPathLayer.getLayers().length > 1) {
+                    map.fitBounds(surveyPathLayer.getBounds(), { padding: [50, 50], maxZoom: 24, animate: true });
+                }
+                lastFitBoundsTime = now;
+            }
         }
     }
     
