@@ -968,7 +968,7 @@ int main(void) {
                 GPS_Distance(gps_lat, gps_lon, target_gps_lat, target_gps_lon);
             float bearing =
                 GPS_Bearing(gps_lat, gps_lon, target_gps_lat, target_gps_lon);
-            float, heading = Get_Mag_Heading();
+            float heading = Get_Mag_Heading();
 
             // Convert bearing and heading to relative angle
             float relative_angle = bearing - heading;
