@@ -56,6 +56,8 @@ let mapInitialized = false;
 let isSurveyMode = false;
 let magBaseline = 0;
 let lastFitBoundsTime = 0;
+let lastPlottedLat = 0;
+let lastPlottedLon = 0;
 
 function toggleHeatmap() {
     isSurveyMode = document.getElementById('heatmap-toggle').checked;
@@ -63,6 +65,8 @@ function toggleHeatmap() {
         // Hide the map tiles to show only the survey data
         map.removeLayer(tileLayer);
         document.getElementById('map').style.background = 'var(--bg-color)'; 
+        lastPlottedLat = 0; // Reset on new survey
+        lastPlottedLon = 0;
     } else {
         // Restore map tiles
         map.addLayer(tileLayer);
@@ -301,34 +305,46 @@ socket.on('telemetry', (data) => {
         
         // Aeromagnetic Survey Logic
         if (isSurveyMode && magBaseline > 0 && data.glat !== 0 && data.glon !== 0 && data.gf > 0) {
-            let currentMag = Math.sqrt(data.mx*data.mx + data.my*data.my + data.mz*data.mz);
-            let variance = Math.abs(currentMag - magBaseline);
             
-            // Map variance to intensity (0.0 to 1.0). 
-            // 300 is an arbitrary scaling factor for visual intensity.
-            let intensity = Math.min(1.0, variance / 300.0);
-            
-            // Only plot significant anomalies to keep the map clean, or plot everything
-            if (variance > 20) { 
-                heatLayer.addLatLng([data.glat, data.glon, intensity]);
+            // Check if the drone has moved to prevent piling up data while hovering
+            let distance = 100; // Default to plot immediately
+            if (lastPlottedLat !== 0 && lastPlottedLon !== 0) {
+                distance = map.distance([lastPlottedLat, lastPlottedLon], [data.glat, data.glon]);
             }
             
-            // Draw path dots
-            L.circleMarker([data.glat, data.glon], {
-                radius: 2,
-                color: '#0ea5e9',
-                fillColor: '#0ea5e9',
-                fillOpacity: 1,
-                stroke: false
-            }).addTo(surveyPathLayer);
-            
-            // Auto-fit the map to show the entire survey path
-            let now = Date.now();
-            if (now - lastFitBoundsTime > 1000) {
-                if (surveyPathLayer.getLayers().length > 1) {
-                    map.fitBounds(surveyPathLayer.getBounds(), { padding: [50, 50], maxZoom: 24, animate: false });
+            // Only plot if the drone has moved at least 0.5 meters
+            if (distance > 0.5) {
+                lastPlottedLat = data.glat;
+                lastPlottedLon = data.glon;
+
+                let currentMag = Math.sqrt(data.mx*data.mx + data.my*data.my + data.mz*data.mz);
+                let variance = Math.abs(currentMag - magBaseline);
+                
+                // Map variance to intensity (0.0 to 1.0). 
+                let intensity = Math.min(1.0, variance / 300.0);
+                
+                // Only plot significant anomalies to keep the map clean, or plot everything
+                if (variance > 20) { 
+                    heatLayer.addLatLng([data.glat, data.glon, intensity]);
                 }
-                lastFitBoundsTime = now;
+                
+                // Draw path dots
+                L.circleMarker([data.glat, data.glon], {
+                    radius: 2,
+                    color: '#0ea5e9',
+                    fillColor: '#0ea5e9',
+                    fillOpacity: 1,
+                    stroke: false
+                }).addTo(surveyPathLayer);
+                
+                // Auto-fit the map to show the entire survey path
+                let now = Date.now();
+                if (now - lastFitBoundsTime > 1000) {
+                    if (surveyPathLayer.getLayers().length > 1) {
+                        map.fitBounds(surveyPathLayer.getBounds(), { padding: [50, 50], maxZoom: 24, animate: false });
+                    }
+                    lastFitBoundsTime = now;
+                }
             }
         }
     }
