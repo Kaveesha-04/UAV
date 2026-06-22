@@ -326,7 +326,7 @@ socket.on('telemetry', (data) => {
             let now = Date.now();
             if (now - lastFitBoundsTime > 1000) {
                 if (surveyPathLayer.getLayers().length > 1) {
-                    map.fitBounds(surveyPathLayer.getBounds(), { padding: [50, 50], maxZoom: 24, animate: true });
+                    map.fitBounds(surveyPathLayer.getBounds(), { padding: [50, 50], maxZoom: 24, animate: false });
                 }
                 lastFitBoundsTime = now;
             }
