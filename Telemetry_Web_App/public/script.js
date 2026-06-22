@@ -145,7 +145,7 @@ setInterval(() => {
     if(magPlotInitialized && magX_data.length > 0) {
         Plotly.update('mag-plot', {x: [magX_data], y: [magY_data], z: [magZ_data]});
     }
-}, 500);
+}, 2000); // Throttled to 2 seconds to save CPU
 
 function calibrateMag() {
     if(magX_data.length < 50) {
@@ -390,9 +390,9 @@ socket.on('telemetry', (data) => {
         document.getElementById('drone_y_f').innerText = data.pid_y[3].toFixed(2);
     }
     
-    // Update Chart
-    const now = new Date().toLocaleTimeString();
-    telemetryChart.data.labels.push(now);
+    // Update Chart data arrays (5Hz)
+    const nowStr = new Date().toLocaleTimeString();
+    telemetryChart.data.labels.push(nowStr);
     telemetryChart.data.datasets[0].data.push(data.r || 0);
     telemetryChart.data.datasets[1].data.push(data.p || 0);
     telemetryChart.data.datasets[2].data.push(data.y || 0);
@@ -402,8 +402,15 @@ socket.on('telemetry', (data) => {
         telemetryChart.data.labels.shift();
         telemetryChart.data.datasets.forEach(dataset => dataset.data.shift());
     }
-    telemetryChart.update();
+    
+    // Throttle heavy chart rendering to 1Hz (once per second) to prevent browser UI freezing
+    if (Date.now() - window.lastChartRenderTime > 1000) {
+        telemetryChart.update();
+        window.lastChartRenderTime = Date.now();
+    }
 });
+
+window.lastChartRenderTime = 0;
 
 // PID Saving Function
 function savePID(axis) {
