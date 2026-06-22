@@ -32,7 +32,6 @@ const tcpServer = net.createServer((socket) => {
             if (jsonString.length > 0) {
                 try {
                     const telemetry = JSON.parse(jsonString);
-                    console.log("Broadcasting telemetry:", telemetry); // ADDED FOR DEBUGGING
                     // Broadcast to all connected web clients
                     io.emit('telemetry', telemetry);
                 } catch (err) {
