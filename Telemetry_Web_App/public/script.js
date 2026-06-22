@@ -42,7 +42,36 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let droneMarker = L.marker([0, 0]).addTo(map);
+let heatLayer = L.heatLayer([], {radius: 35, blur: 20, maxZoom: 17, max: 1.0}).addTo(map);
 let mapInitialized = false;
+let isSurveyMode = false;
+let magBaseline = 0;
+
+function toggleHeatmap() {
+    isSurveyMode = document.getElementById('heatmap-toggle').checked;
+    if (!isSurveyMode) {
+        heatLayer.setLatLngs([]); // Clear map when toggled off
+    }
+}
+
+function setMagneticBaseline() {
+    if (typeof magX_data === 'undefined' || magX_data.length === 0) {
+        alert("No magnetometer data received yet!");
+        return;
+    }
+    // Use the latest reading
+    let x = magX_data[magX_data.length - 1];
+    let y = magY_data[magY_data.length - 1];
+    let z = magZ_data[magZ_data.length - 1];
+    magBaseline = Math.sqrt(x*x + y*y + z*z);
+    
+    let baselineVal = document.getElementById('survey-baseline-val');
+    baselineVal.innerText = `Baseline: ${magBaseline.toFixed(2)} µT`;
+    baselineVal.style.display = 'inline-block';
+    
+    // Clear existing heat map when setting new baseline
+    heatLayer.setLatLngs([]);
+}
 
 map.on('click', function(e) {
     const lat = e.latlng.lat;
@@ -251,6 +280,21 @@ socket.on('telemetry', (data) => {
     if (data.mx !== undefined && data.my !== undefined && data.mz !== undefined) {
         magX_data.push(data.mx); magY_data.push(data.my); magZ_data.push(data.mz);
         if(magX_data.length > 300) { magX_data.shift(); magY_data.shift(); magZ_data.shift(); }
+        
+        // Aeromagnetic Survey Logic
+        if (isSurveyMode && magBaseline > 0 && data.glat !== 0 && data.glon !== 0 && data.gf > 0) {
+            let currentMag = Math.sqrt(data.mx*data.mx + data.my*data.my + data.mz*data.mz);
+            let variance = Math.abs(currentMag - magBaseline);
+            
+            // Map variance to intensity (0.0 to 1.0). 
+            // 300 is an arbitrary scaling factor for visual intensity.
+            let intensity = Math.min(1.0, variance / 300.0);
+            
+            // Only plot significant anomalies to keep the map clean, or plot everything
+            if (variance > 20) { 
+                heatLayer.addLatLng([data.glat, data.glon, intensity]);
+            }
+        }
     }
     
     // RC Transmitter Progress Bars (Width percentage) and Raw Values

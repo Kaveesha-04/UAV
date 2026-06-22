@@ -134,9 +134,8 @@ void loop() {
     data.throttle = map(raw_throttle, ADC_MIN, ADC_MAX, 1000, 2000);
     data.throttle = constrain(data.throttle, 1000, 2000);
 
-    // Yaw: -500 to 500
-    data.yaw = map_joystick(raw_yaw, ADC_MIN, ADC_YAW_MID, ADC_MAX);
-    data.yaw = constrain(data.yaw, -500, 500);
+    // Yaw: hardcoded to 0
+    data.yaw = 0;
 
     // Pitch: hardcoded to 0 since joystick is removed
     data.pitch = 0;
