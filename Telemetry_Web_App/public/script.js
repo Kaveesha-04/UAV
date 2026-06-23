@@ -34,74 +34,7 @@ const telemetryChart = new Chart(ctx, {
     }
 });
 
-// Initialize Leaflet Map (maxZoom increased to 24 for high precision)
-const map = L.map('map', { maxZoom: 24 }).setView([0, 0], 2);
-let tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors',
-    className: 'map-tiles',
-    maxNativeZoom: 19,
-    maxZoom: 24
-}).addTo(map);
-
-let droneMarker = L.marker([0, 0]).addTo(map);
-let surveyPathLayer = L.featureGroup().addTo(map);
-let heatLayer = L.heatLayer([], {
-    radius: 35, 
-    blur: 20, 
-    maxZoom: 24, 
-    max: 1.0,
-    gradient: {0.4: 'lime', 0.65: 'yellow', 1.0: 'red'}
-}).addTo(map);
-let mapInitialized = false;
-let isSurveyMode = false;
-let magBaseline = 0;
-let lastFitBoundsTime = 0;
-let lastPlottedLat = 0;
-let lastPlottedLon = 0;
-
-function toggleHeatmap() {
-    isSurveyMode = document.getElementById('heatmap-toggle').checked;
-    if (isSurveyMode) {
-        // Hide the map tiles to show only the survey data
-        map.removeLayer(tileLayer);
-        document.getElementById('map').style.background = 'var(--bg-color)'; 
-        lastPlottedLat = 0; // Reset on new survey
-        lastPlottedLon = 0;
-    } else {
-        // Restore map tiles
-        map.addLayer(tileLayer);
-        document.getElementById('map').style.background = '';
-        heatLayer.setLatLngs([]); // Clear map when toggled off
-        surveyPathLayer.clearLayers(); // Clear path dots
-    }
-}
-
-function setMagneticBaseline() {
-    if (typeof magX_data === 'undefined' || magX_data.length === 0) {
-        alert("No magnetometer data received yet!");
-        return;
-    }
-    // Use the latest reading
-    let x = magX_data[magX_data.length - 1];
-    let y = magY_data[magY_data.length - 1];
-    let z = magZ_data[magZ_data.length - 1];
-    magBaseline = Math.sqrt(x*x + y*y + z*z);
-    
-    let baselineVal = document.getElementById('survey-baseline-val');
-    baselineVal.innerText = `Baseline: ${magBaseline.toFixed(2)} µT`;
-    baselineVal.style.display = 'inline-block';
-    
-    // Clear existing heat map when setting new baseline
-    heatLayer.setLatLngs([]);
-}
-
-map.on('click', function(e) {
-    const lat = e.latlng.lat;
-    const lon = e.latlng.lng;
-    if(confirm(`Send Waypoint to Drone:\nLat: ${lat.toFixed(5)}\nLon: ${lon.toFixed(5)} ?`)) {
-        socket.emit('send_waypoint', { lat: lat, lon: lon });
-    }
-});
+// Survey map functionality has been moved to survey.js
 
 function changeFlightMode() {
     const mode = document.getElementById('flight-mode').value;
@@ -210,20 +143,10 @@ socket.on('telemetry', (data) => {
     if (data.a !== undefined) document.getElementById('val-alt').innerText = data.a.toFixed(1) + 'm';
     if (data.d !== undefined) document.getElementById('val-heading').innerText = data.d.toFixed(1) + '°';
     
-    // GPS & Map Update
+    // GPS Update
     if (data.glat !== undefined && data.glon !== undefined) {
         document.getElementById('val-lat').innerText = data.glat.toFixed(5);
         document.getElementById('val-lon').innerText = data.glon.toFixed(5);
-        
-        if (data.glat !== 0 && data.glon !== 0) {
-            const newLatLng = new L.LatLng(data.glat, data.glon);
-            droneMarker.setLatLng(newLatLng);
-            if (!mapInitialized) {
-                map.setView(newLatLng, 17); // Zoom in when first fix acquired
-                setTimeout(() => map.invalidateSize(), 500);
-                mapInitialized = true;
-            }
-        }
     }
     
     if (data.gf !== undefined) {
@@ -302,51 +225,6 @@ socket.on('telemetry', (data) => {
     if (data.mx !== undefined && data.my !== undefined && data.mz !== undefined) {
         magX_data.push(data.mx); magY_data.push(data.my); magZ_data.push(data.mz);
         if(magX_data.length > 300) { magX_data.shift(); magY_data.shift(); magZ_data.shift(); }
-        
-        // Aeromagnetic Survey Logic
-        if (isSurveyMode && magBaseline > 0 && data.glat !== 0 && data.glon !== 0 && data.gf > 0) {
-            
-            // Check if the drone has moved to prevent piling up data while hovering
-            let distance = 100; // Default to plot immediately
-            if (lastPlottedLat !== 0 && lastPlottedLon !== 0) {
-                distance = map.distance([lastPlottedLat, lastPlottedLon], [data.glat, data.glon]);
-            }
-            
-            // Only plot if the drone has moved at least 0.5 meters
-            if (distance > 0.5) {
-                lastPlottedLat = data.glat;
-                lastPlottedLon = data.glon;
-
-                let currentMag = Math.sqrt(data.mx*data.mx + data.my*data.my + data.mz*data.mz);
-                let variance = Math.abs(currentMag - magBaseline);
-                
-                // Map variance to intensity (0.0 to 1.0). 
-                let intensity = Math.min(1.0, variance / 300.0);
-                
-                // Only plot significant anomalies to keep the map clean, or plot everything
-                if (variance > 20) { 
-                    heatLayer.addLatLng([data.glat, data.glon, intensity]);
-                }
-                
-                // Draw path dots
-                L.circleMarker([data.glat, data.glon], {
-                    radius: 2,
-                    color: '#0ea5e9',
-                    fillColor: '#0ea5e9',
-                    fillOpacity: 1,
-                    stroke: false
-                }).addTo(surveyPathLayer);
-                
-                // Auto-fit the map to show the entire survey path
-                let now = Date.now();
-                if (now - lastFitBoundsTime > 1000) {
-                    if (surveyPathLayer.getLayers().length > 1) {
-                        map.fitBounds(surveyPathLayer.getBounds(), { padding: [50, 50], maxZoom: 24, animate: false });
-                    }
-                    lastFitBoundsTime = now;
-                }
-            }
-        }
     }
     
     // RC Transmitter Progress Bars (Width percentage) and Raw Values
