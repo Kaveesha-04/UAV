@@ -129,8 +129,12 @@ io.on('connection', (wsSocket) => {
     }
 
     wsSocket.on('tune_pid', (data) => {
-        // Format to CSV: P,roll,1.20,0.05,0.01,0.00\n
-        sendCommandToDrone(`P,${data.axis},${data.p},${data.i},${data.d},${data.f}\n`);
+        // Convert floats to integers (*100) to avoid STM32 sscanf %f float parsing issues!
+        let p_int = Math.round(data.p * 100);
+        let i_int = Math.round(data.i * 100);
+        let d_int = Math.round(data.d * 100);
+        let f_int = Math.round(data.f * 100);
+        sendCommandToDrone(`P,${data.axis},${p_int},${i_int},${d_int},${f_int}\n`);
     });
 
     wsSocket.on('send_waypoint', (data) => {

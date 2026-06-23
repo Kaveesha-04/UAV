@@ -639,12 +639,17 @@ int main(void) {
       }
 
       if (esp_parsing) {
-        // Format P: P,roll,1.20,0.05,0.01,0.00
+        // Format P: P,roll,120,5,1,0
         if (esp_parse_buffer[0] == 'P') {
           char axis[16];
-          float p = 0, i = 0, d = 0, f = 0;
+          int p_int = 0, i_int = 0, d_int = 0, f_int = 0;
           
-          if (sscanf((char *)esp_parse_buffer, "P,%15[^,],%f,%f,%f,%f", axis, &p, &i, &d, &f) == 5) {
+          if (sscanf((char *)esp_parse_buffer, "P,%15[^,],%d,%d,%d,%d", axis, &p_int, &i_int, &d_int, &f_int) == 5) {
+            float p = (float)p_int / 100.0f;
+            float i = (float)i_int / 100.0f;
+            float d = (float)d_int / 100.0f;
+            float f = (float)f_int / 100.0f;
+            
             if (strcmp(axis, "roll") == 0) {
               pid_roll.Kp = p;
               pid_roll.Ki = i;
@@ -811,21 +816,31 @@ int main(void) {
       // --- STICK ARMING LOGIC (And Hardware Button Backup) ---
       static uint32_t stick_cmd_timer = 0;
       if (base_throttle <= 1120.0f) { // Adjusted for ESP32 min throttle of 1100
-        // New arming method: Hold throttle down for 4 seconds
-        if (stick_cmd_timer == 0) {
-          stick_cmd_timer = current_time;
-        } else if (current_time - stick_cmd_timer > 4000) { // Hold for 4 seconds
-          if (current_state != STATE_ARMED) {
-            current_state = STATE_ARMED;
-            setpoint_yaw = yaw_actual;
-            home_lat = gps_lat; // Lock home position
-            home_lon = gps_lon;
-          } else {
-            current_state = STATE_DISARMED;
-            Reset_PID_Integrals(&pid_roll, &pid_pitch, &pid_yaw);
+        // Betaflight-style stick commands:
+        // Arm: Throttle down, Yaw Right (> 400)
+        // Disarm: Throttle down, Yaw Left (< -400)
+        if (nrf_data.yaw > 400) {
+          if (stick_cmd_timer == 0) {
+            stick_cmd_timer = current_time;
+          } else if (current_time - stick_cmd_timer > 1000) { // Hold for 1 second
+            if (current_state == STATE_DISARMED || current_state == STATE_FAILSAFE) {
+              current_state = STATE_ARMED;
+              setpoint_yaw = yaw_actual;
+              home_lat = gps_lat; // Lock home position
+              home_lon = gps_lon;
+            }
           }
-          // Reset timer so it takes another 4 seconds to toggle again
-          stick_cmd_timer = current_time; 
+        } else if (nrf_data.yaw < -400) {
+          if (stick_cmd_timer == 0) {
+            stick_cmd_timer = current_time;
+          } else if (current_time - stick_cmd_timer > 1000) { // Hold for 1 second
+            if (current_state == STATE_ARMED) {
+              current_state = STATE_DISARMED;
+              Reset_PID_Integrals(&pid_roll, &pid_pitch, &pid_yaw);
+            }
+          }
+        } else {
+          stick_cmd_timer = 0; // Reset timer if yaw is centered
         }
       } else {
         stick_cmd_timer = 0;
