@@ -20,16 +20,18 @@ void Flash_Save(Flash_Data* data) {
     }
     
     // The STM32H7 programs flash in 256-bit (32-byte) Flash Words.
-    // Our struct size is 52 bytes. We pad it to 64 bytes.
+    // We must pad our struct to the next 32-byte boundary.
     // Explicit 32-byte alignment prevents AXI bus HardFaults during Flash writes.
-    __attribute__((aligned(32))) uint8_t buffer[64] = {0};
+    #define FLASH_WORD_SIZE 32
+    #define PADDED_SIZE (((sizeof(Flash_Data) + FLASH_WORD_SIZE - 1) / FLASH_WORD_SIZE) * FLASH_WORD_SIZE)
+    __attribute__((aligned(32))) uint8_t buffer[PADDED_SIZE] = {0};
     data->magic = EEPROM_MAGIC;
     memcpy(buffer, data, sizeof(Flash_Data));
     
     uint32_t address = FLASH_USER_START_ADDR;
     
-    // Write 2 Flash Words (64 bytes total)
-    for (int i = 0; i < 2; i++) {
+    // Write Flash Words (32 bytes each)
+    for (int i = 0; i < (int)(PADDED_SIZE / FLASH_WORD_SIZE); i++) {
         uint32_t flashWordAddr = (uint32_t)(buffer + (i * 32));
         HAL_FLASH_Program(FLASH_TYPEPROGRAM_FLASHWORD, address, flashWordAddr);
         address += 32;
