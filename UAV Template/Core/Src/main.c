@@ -73,7 +73,7 @@ UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-char uart_buf[512]; // UART එකෙන් Serial Monitor එකට Print කරන්න
+
 
 // GPS UART Variables
 uint8_t gps_rx_data;
@@ -142,12 +142,12 @@ uint16_t prev_time_us;
 float dt;
 
 // PID Controllers (Attitude)
-PID_Controller pid_roll = {0.6f, 0.0f, 0.01f, 0.0f,   0.0f,
-                           0.0f, 0.0f, 0.0f,  400.0f, -400.0f};
-PID_Controller pid_pitch = {0.6f, 0.0f, 0.01f, 0.0f,   0.0f,
-                            0.0f, 0.0f, 0.0f,  400.0f, -400.0f};
-PID_Controller pid_yaw = {1.0f, 0.0f, 0.0f, 0.0f,   0.0f,
-                          0.0f, 0.0f, 0.0f, 400.0f, -400.0f};
+PID_Controller pid_roll = {0.5f, 0.0f, 0.005f, 0.0f,   0.0f,
+                           0.0f, 0.0f, 0.0f,  200.0f, -200.0f};
+PID_Controller pid_pitch = {0.5f, 0.0f, 0.005f, 0.0f,   0.0f,
+                            0.0f, 0.0f, 0.0f,  200.0f, -200.0f};
+PID_Controller pid_yaw = {0.5f, 0.0f, 0.005f, 0.0f,   0.0f,
+                          0.0f, 0.0f, 0.0f, 200.0f, -200.0f};
 
 // PID Controllers (Altitude and GPS)
 PID_Controller pid_alt = {
@@ -483,7 +483,7 @@ int main(void) {
       MPU6500_Read_Angles(&hspi2, dt);
 
       float roll_actual = MPU6500_GetRoll();
-      float pitch_actual = MPU6500_GetPitch();
+      float pitch_actual = -MPU6500_GetPitch(); // Negated: IMU pitch axis is reversed on this frame
       float yaw_actual = MPU6500_GetYaw();
       float alt_actual = BMP280_GetAltitude();
 
@@ -871,7 +871,7 @@ int main(void) {
         static uint32_t crash_timer = 0;
 
         // 1. 70-Degree Crash Detection Killswitch (Instant)
-        if (fabsf(roll_actual) > 70.0f || fabsf(pitch_actual) > 70.0f) {
+        if (fabsf(roll_actual) > 45.0f || fabsf(pitch_actual) > 45.0f) {
           current_state =
               STATE_DISARMED; // Drone flipped, kill motors immediately!
         }
@@ -940,11 +940,10 @@ int main(void) {
         } else {
           // ACTIVE FLIGHT MODE
 
-          // Map physical throttle [1120, 2000] to full motor output range [1500, 2000]
-          // This bypasses the low-throttle "tipping zone" and gives full stick resolution!
-          float mapped_throttle = 1500.0f + ((base_throttle - 1120.0f) / (2000.0f - 1120.0f)) * (2000.0f - 1500.0f);
+          // Linear throttle ramp from idle to max — no sudden jump
+          float mapped_throttle = 1150.0f + ((base_throttle - 1120.0f) / (2000.0f - 1120.0f)) * (2000.0f - 1150.0f);
           if (mapped_throttle > 2000.0f) mapped_throttle = 2000.0f;
-          if (mapped_throttle < 1500.0f) mapped_throttle = 1500.0f;
+          if (mapped_throttle < 1150.0f) mapped_throttle = 1150.0f;
 
           // Ground Idle Anti-Windup
           // Prevent I-term accumulation if the physical throttle stick is barely pushed
@@ -970,11 +969,19 @@ int main(void) {
           // 1. Altitude Hold Override
           float current_altitude = BMP280_GetAltitude();
           float throttle_output = mapped_throttle;
+          static float hover_throttle = 1600.0f;
+          static uint8_t hover_locked = 0;
           if (alt_hold_active) {
+            // On first activation, lock the pilot's current throttle as the hover baseline
+            if (!hover_locked) {
+              hover_throttle = mapped_throttle;
+              hover_locked = 1;
+            }
             float alt_correction = PID_Compute(&pid_alt, target_altitude,
                                                current_altitude, dt, 1.0f);
-            throttle_output =
-                1600.0f + alt_correction; // Hover throttle is ~1600
+            throttle_output = hover_throttle + alt_correction;
+          } else {
+            hover_locked = 0; // Reset so next activation captures fresh throttle
           }
 
           // 2. GPS Navigation Override
@@ -1079,14 +1086,6 @@ int main(void) {
           motor3 = (uint16_t)m3;
           motor4 = (uint16_t)m4;
         }
-      } else {
-        // DISARMED or FAILSAFE Mode
-        Reset_PID_Integrals(&pid_roll, &pid_pitch,
-                            &pid_yaw); // Prevent mathematical buildup
-        motor1 = 1100;
-        motor2 = 1100;
-        motor3 = 1100;
-        motor4 = 1100;
       }
 
       // 5. Output to motors
@@ -1133,7 +1132,8 @@ int main(void) {
             "%02d,%d."
             "%02d,%d.%02d],\"pid_y\":[%d.%02d,%d.%02d,%d.%02d,%d.%02d],\"md\":%"
             "d,\"mx\":%d,"
-            "\"my\":%d,\"mz\":%d,\"ry\":%d,\"rp\":%d,\"rr\":%d,\"arm\":%d,\"sig\":%d}\n",
+            "\"my\":%d,\"mz\":%d,\"ry\":%d,\"rp\":%d,\"rr\":%d,\"arm\":%d,\"sig\":%d,"
+            "\"m1\":%d,\"m2\":%d,\"m3\":%d,\"m4\":%d}\n",
             (int)battery_voltage, (int)(battery_voltage * 100) % 100, s_r,
             (int)fabsf(roll_actual), (int)(fabsf(roll_actual) * 10) % 10, s_p,
             (int)fabsf(pitch_actual), (int)(fabsf(pitch_actual) * 10) % 10, s_y,
@@ -1157,7 +1157,8 @@ int main(void) {
             (int)(pid_yaw.Kd * 100) % 100, (int)pid_yaw.Kf,
             (int)(pid_yaw.Kf * 100) % 100, (int)current_mode, mag_x, mag_y,
             mag_z, nrf_data.yaw, nrf_data.pitch, nrf_data.roll,
-            (current_state == STATE_ARMED ? 1 : 0), (int)nrf_sig_strength);
+            (current_state == STATE_ARMED ? 1 : 0), (int)nrf_sig_strength,
+            (int)motor1, (int)motor2, (int)motor3, (int)motor4);
 
         // Send to USB (Serial Monitor)
         CDC_Transmit_FS(uart_buf, strlen((char *)uart_buf));

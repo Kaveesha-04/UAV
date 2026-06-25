@@ -117,11 +117,59 @@
                 </div>
                 
                 <div class="glass-panel widget-engine">
-                    <h2>Engine Power</h2>
-                    <div class="throttle-container">
-                        <span id="val-throttle" class="throttle-val">1000</span>
-                        <div class="progress-bg">
-                            <div class="progress-fill glow" id="throttle-bar"></div>
+                    <h2>Motor Outputs</h2>
+                    <div class="motor-diagram">
+                        <!-- Front Label -->
+                        <div class="motor-front-label">▲ FRONT</div>
+                        
+                        <!-- Motor Grid (2x2 drone layout) -->
+                        <div class="motor-grid">
+                            <!-- Front Left (CH3 - CW) -->
+                            <div class="motor-box" id="motor-box-fl">
+                                <div class="motor-label">FL <span class="motor-spin">CW</span></div>
+                                <div class="motor-value" id="val-m3">1100</div>
+                                <div class="motor-bar-bg">
+                                    <div class="motor-bar-fill" id="bar-m3"></div>
+                                </div>
+                                <div class="motor-ch">CH3</div>
+                            </div>
+                            <!-- Front Right (CH4 - CCW) -->
+                            <div class="motor-box" id="motor-box-fr">
+                                <div class="motor-label">FR <span class="motor-spin">CCW</span></div>
+                                <div class="motor-value" id="val-m4">1100</div>
+                                <div class="motor-bar-bg">
+                                    <div class="motor-bar-fill" id="bar-m4"></div>
+                                </div>
+                                <div class="motor-ch">CH4</div>
+                            </div>
+                            <!-- Center drone body -->
+                            <div class="motor-body-overlay">
+                                <div class="drone-body-icon">✦</div>
+                            </div>
+                            <!-- Back Left (CH1 - CCW) -->
+                            <div class="motor-box" id="motor-box-bl">
+                                <div class="motor-label">BL <span class="motor-spin">CCW</span></div>
+                                <div class="motor-value" id="val-m1">1100</div>
+                                <div class="motor-bar-bg">
+                                    <div class="motor-bar-fill" id="bar-m1"></div>
+                                </div>
+                                <div class="motor-ch">CH1</div>
+                            </div>
+                            <!-- Back Right (CH2 - CW) -->
+                            <div class="motor-box" id="motor-box-br">
+                                <div class="motor-label">BR <span class="motor-spin">CW</span></div>
+                                <div class="motor-value" id="val-m2">1100</div>
+                                <div class="motor-bar-bg">
+                                    <div class="motor-bar-fill" id="bar-m2"></div>
+                                </div>
+                                <div class="motor-ch">CH2</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Throttle summary -->
+                        <div class="motor-throttle-row">
+                            <span class="label">THROTTLE</span>
+                            <span class="value cyan" id="val-throttle">1000</span>
                         </div>
                     </div>
                 </div>
@@ -150,7 +198,7 @@
                             <label>F <span id="val_r_f">0.00</span></label>
                             <input type="range" id="pid_r_f" min="0" max="2" step="0.01" value="0.00">
                         </div>
-                        <button class="btn-save" onclick="savePID('roll')">UPLOAD ROLL PIDs</button>
+                        <button class="btn-save" onclick="savePID('roll', this)">UPLOAD ROLL PIDs</button>
                     </div>
 
                     <div class="pid-section">
@@ -171,7 +219,7 @@
                             <label>F <span id="val_p_f">0.00</span></label>
                             <input type="range" id="pid_p_f" min="0" max="2" step="0.01" value="0.00">
                         </div>
-                        <button class="btn-save" onclick="savePID('pitch')">UPLOAD PITCH PIDs</button>
+                        <button class="btn-save" onclick="savePID('pitch', this)">UPLOAD PITCH PIDs</button>
                     </div>
 
                     <div class="pid-section">
@@ -192,7 +240,7 @@
                             <label>F <span id="val_y_f">0.00</span></label>
                             <input type="range" id="pid_y_f" min="0" max="2" step="0.01" value="0.00">
                         </div>
-                        <button class="btn-save" onclick="savePID('yaw')">UPLOAD YAW PIDs</button>
+                        <button class="btn-save" onclick="savePID('yaw', this)">UPLOAD YAW PIDs</button>
                     </div>
 
                     <button class="btn-save" style="margin-top: 20px; background: rgba(16, 185, 129, 0.2); border-color: var(--emerald); color: var(--emerald);" onclick="burnToFlash()">

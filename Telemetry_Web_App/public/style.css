@@ -294,6 +294,146 @@ h2 {
     box-shadow: 0 0 15px var(--cyan);
 }
 
+/* Motor Diagram */
+.motor-diagram {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.motor-front-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    letter-spacing: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.motor-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    width: 100%;
+    position: relative;
+}
+
+.motor-body-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 36px;
+    height: 36px;
+    background: rgba(14, 165, 233, 0.15);
+    border: 2px solid rgba(14, 165, 233, 0.4);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    box-shadow: 0 0 20px rgba(14, 165, 233, 0.2);
+}
+
+.drone-body-icon {
+    color: var(--cyan);
+    font-size: 1rem;
+    text-shadow: 0 0 10px var(--cyan);
+}
+
+.motor-box {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.motor-box.active {
+    border-color: rgba(14, 165, 233, 0.4);
+    box-shadow: 0 0 12px rgba(14, 165, 233, 0.15);
+}
+
+.motor-box.warn {
+    border-color: rgba(251, 146, 60, 0.5);
+    box-shadow: 0 0 12px rgba(251, 146, 60, 0.2);
+}
+
+.motor-box.danger {
+    border-color: rgba(244, 63, 94, 0.5);
+    box-shadow: 0 0 12px rgba(244, 63, 94, 0.2);
+}
+
+.motor-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-main);
+    letter-spacing: 1px;
+}
+
+.motor-spin {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
+.motor-value {
+    font-family: monospace;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 8px rgba(14, 165, 233, 0.4);
+}
+
+.motor-bar-bg {
+    width: 100%;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.motor-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+    border-radius: 4px;
+    transition: width 0.15s ease-out, background 0.3s;
+    box-shadow: 0 0 8px rgba(14, 165, 233, 0.4);
+}
+
+.motor-bar-fill.warn {
+    background: linear-gradient(90deg, #fb923c, #f97316);
+    box-shadow: 0 0 8px rgba(251, 146, 60, 0.4);
+}
+
+.motor-bar-fill.danger {
+    background: linear-gradient(90deg, #f43f5e, #e11d48);
+    box-shadow: 0 0 8px rgba(244, 63, 94, 0.4);
+}
+
+.motor-ch {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+.motor-throttle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    margin-top: 4px;
+}
+
 /* PID Tuning Sliders */
 .pid-section {
     margin-bottom: 25px;

@@ -184,14 +184,42 @@ socket.on('telemetry', (data) => {
         }
     }
     
-    // Engine Power
+    // Motor Outputs & Throttle
     if (data.t !== undefined) {
         document.getElementById('val-throttle').innerText = data.t;
-        let t_pct = ((data.t - 1000) / 1000) * 100;
-        if(t_pct < 0) t_pct = 0;
-        if(t_pct > 100) t_pct = 100;
-        document.getElementById('throttle-bar').style.width = t_pct + '%';
     }
+    
+    // Individual Motor Speed Bars
+    function updateMotorBox(motorId, boxId, pwm) {
+        const valEl = document.getElementById('val-' + motorId);
+        const barEl = document.getElementById('bar-' + motorId);
+        const boxEl = document.getElementById(boxId);
+        if (!valEl || !barEl || !boxEl) return;
+        
+        valEl.innerText = pwm;
+        let pct = ((pwm - 1100) / (2000 - 1100)) * 100;
+        if (pct < 0) pct = 0;
+        if (pct > 100) pct = 100;
+        barEl.style.width = pct + '%';
+        
+        // Color coding based on power level
+        barEl.className = 'motor-bar-fill';
+        boxEl.className = 'motor-box';
+        if (pct > 80) {
+            barEl.classList.add('danger');
+            boxEl.classList.add('danger');
+        } else if (pct > 50) {
+            barEl.classList.add('warn');
+            boxEl.classList.add('warn');
+        } else if (pct > 2) {
+            boxEl.classList.add('active');
+        }
+    }
+    
+    if (data.m1 !== undefined) updateMotorBox('m1', 'motor-box-bl', data.m1);
+    if (data.m2 !== undefined) updateMotorBox('m2', 'motor-box-br', data.m2);
+    if (data.m3 !== undefined) updateMotorBox('m3', 'motor-box-fl', data.m3);
+    if (data.m4 !== undefined) updateMotorBox('m4', 'motor-box-fr', data.m4);
     
     // Flight Mode Sync
     if (data.md !== undefined) {
@@ -307,7 +335,7 @@ socket.on('telemetry', (data) => {
 window.lastChartRenderTime = 0;
 
 // PID Saving Function
-function savePID(axis) {
+function savePID(axis, btn) {
     let p, i, d, f;
     if (axis === 'roll') {
         p = parseFloat(document.getElementById('pid_r_p').value);
@@ -329,7 +357,6 @@ function savePID(axis) {
     socket.emit('tune_pid', { axis: axis, p: p, i: i, d: d, f: f });
     
     // Flash button green
-    const btn = event.target;
     const oldText = btn.innerText;
     btn.innerText = "SAVED!";
     btn.style.background = "#10b981";
