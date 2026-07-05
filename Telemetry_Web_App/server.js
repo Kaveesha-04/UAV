@@ -161,6 +161,31 @@ io.on('connection', (wsSocket) => {
         sendCommandToDrone(`H\n`);
     });
 
+    // --- AUTO SURVEY MISSION COMMANDS ---
+    wsSocket.on('survey_reset', () => {
+        sendCommandToDrone(`S,RESET\n`);
+    });
+
+    wsSocket.on('survey_waypoint', (data) => {
+        sendCommandToDrone(`S,WP,${data.lat},${data.lon}\n`);
+    });
+
+    wsSocket.on('survey_start', () => {
+        sendCommandToDrone(`S,START\n`);
+    });
+
+    wsSocket.on('survey_pause', () => {
+        sendCommandToDrone(`S,PAUSE\n`);
+    });
+
+    wsSocket.on('survey_resume', () => {
+        sendCommandToDrone(`S,RESUME\n`);
+    });
+
+    wsSocket.on('survey_abort', () => {
+        sendCommandToDrone(`S,ABORT\n`);
+    });
+
 });
 
 // Start Web Server
