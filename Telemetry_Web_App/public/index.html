@@ -9,7 +9,9 @@
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-    <!-- Leaflet removed from main dashboard to improve performance -->
+    <!-- Leaflet Map for Waypoint Selection -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
     <div class="dashboard">
@@ -32,6 +34,9 @@
                     <button class="btn-save" style="background: rgba(16, 185, 129, 0.2); border-color: var(--emerald); color: var(--emerald); padding: 5px 15px; margin: 0; min-width: 80px;" onclick="toggleArm(1)">ARM</button>
                     <button class="btn-save" style="background: rgba(244, 63, 94, 0.2); border-color: var(--rose); color: var(--rose); padding: 5px 15px; margin: 0; min-width: 80px;" onclick="toggleArm(0)">DISARM</button>
                 </div>
+                <a href="/survey.html" style="text-decoration: none;">
+                    <button class="btn-save" style="background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.5); color: #a855f7; padding: 5px 15px; margin: 0; min-width: 80px; cursor: pointer; font-weight: 700; letter-spacing: 1px; font-size: 0.75em; transition: all 0.3s;" onmouseover="this.style.background='#a855f7'; this.style.color='#fff';" onmouseout="this.style.background='rgba(168, 85, 247, 0.2)'; this.style.color='#a855f7';">📡 SURVEY MAP</button>
+                </a>
                 <div class="badge" id="conn-badge">
                     <div class="indicator red" id="conn-indicator"></div>
                     <span id="conn-text">SYSTEM OFFLINE</span>
@@ -92,22 +97,49 @@
 
             <!-- Middle Column: Motor Diagnostics & Chart -->
             <div class="col-main">
-                <div class="glass-panel widget-map" style="display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 260px; text-align: center; background: linear-gradient(145deg, rgba(30,41,59,0.6), rgba(15,23,42,0.9)); border: 1px solid rgba(14, 165, 233, 0.2); position: relative; overflow: hidden; padding: 30px 20px;">
-                    <!-- Subtle background glow -->
-                    <div style="position: absolute; top: -20px; left: 50%; transform: translateX(-50%); width: 150px; height: 80px; background: rgba(14, 165, 233, 0.4); filter: blur(50px); pointer-events: none;"></div>
-                    
-                    <div style="font-size: 2.8em; margin-bottom: 10px; text-shadow: 0 0 20px rgba(14, 165, 233, 0.6);">📡</div>
-                    <h2 style="margin: 0 0 12px 0; color: #f8fafc; font-size: 1.3em; letter-spacing: 1px; border: none; padding: 0;">AEROMAGNETIC SURVEY</h2>
-                    
-                    <p style="color: #cbd5e1; font-size: 0.95em; margin-bottom: 25px; max-width: 90%; line-height: 1.5;">
-                        By clicking the button below, you can view the high-resolution magnetic survey on a dedicated full-screen display.
-                    </p>
-                    
-                    <a href="survey.html" target="_blank" class="btn-save" style="width: auto; min-width: 240px; padding: 12px 24px; font-size: 1em; text-decoration: none; border-radius: 50px; background: rgba(14, 165, 233, 0.15); box-shadow: 0 4px 15px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; gap: 8px;">
-                        <span style="font-weight: 700;">LAUNCH SURVEY DISPLAY</span>
-                        <span style="font-size: 1.2em; font-weight: 800;">↗</span>
-                    </a>
+                <div class="glass-panel widget-map" id="waypoint-panel">
+                    <h2>Waypoint Navigation</h2>
+                    <div class="wp-map-wrapper">
+                        <div id="waypoint-map"></div>
+                        <!-- Overlay info strip on top of map -->
+                        <div class="wp-map-overlay">
+                            <div class="wp-overlay-item">
+                                <span class="wp-overlay-label">DRONE</span>
+                                <span class="wp-overlay-value" id="wp-drone-pos">No Fix</span>
+                            </div>
+                            <div class="wp-overlay-divider"></div>
+                            <div class="wp-overlay-item">
+                                <span class="wp-overlay-label">HOME</span>
+                                <span class="wp-overlay-value" id="wp-home-pos">—</span>
+                            </div>
+                            <div class="wp-overlay-divider"></div>
+                            <div class="wp-overlay-item">
+                                <span class="wp-overlay-label">DIST</span>
+                                <span class="wp-overlay-value cyan" id="wp-distance">—</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Waypoint Coordinate Inputs -->
+                    <div class="wp-controls">
+                        <div class="wp-input-row">
+                            <div class="wp-input-group">
+                                <label for="wp-lat-input">LAT</label>
+                                <input type="number" id="wp-lat-input" step="0.00001" placeholder="Click map or enter" />
+                            </div>
+                            <div class="wp-input-group">
+                                <label for="wp-lon-input">LON</label>
+                                <input type="number" id="wp-lon-input" step="0.00001" placeholder="Click map or enter" />
+                            </div>
+                        </div>
+                        <button class="wp-send-btn" id="wp-send-btn" onclick="sendWaypoint()">
+                            <span class="wp-send-icon">🎯</span>
+                            <span>FLY TO WAYPOINT</span>
+                        </button>
+                        <p class="wp-hint">Click on the map to place a waypoint, or enter coordinates manually.</p>
+                    </div>
                 </div>
+
                 
                 <div class="glass-panel widget-chart">
                     <h2>Live Flight Data</h2>

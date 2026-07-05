@@ -377,3 +377,238 @@ setInterval(() => {
 }, 1000);
 
 
+// =============================================
+// WAYPOINT MAP (Leaflet)
+// =============================================
+
+// Initialize the map centered on Sri Lanka (default, will auto-center on GPS fix)
+const wpMap = L.map('waypoint-map', {
+    center: [7.8731, 80.7718],
+    zoom: 15,
+    zoomControl: true,
+    attributionControl: false
+});
+
+// Dark satellite-style tiles
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+}).addTo(wpMap);
+
+// Custom Leaflet divIcon markers
+const droneIcon = L.divIcon({
+    className: 'drone-marker-icon',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8]
+});
+
+const homeIcon = L.divIcon({
+    className: 'home-marker-icon',
+    iconSize: [12, 12],
+    iconAnchor: [6, 6]
+});
+
+const waypointIcon = L.divIcon({
+    className: 'waypoint-marker-icon',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7]
+});
+
+// Map markers (initially null)
+let droneMarker = null;
+let homeMarker = null;
+let waypointMarker = null;
+let flightPathLine = null;
+
+// State
+let lastDroneLat = 0;
+let lastDroneLon = 0;
+let hasAutoCenter = false;
+
+// --- CLICK TO PLACE WAYPOINT ---
+wpMap.on('click', function(e) {
+    const lat = e.latlng.lat;
+    const lon = e.latlng.lng;
+    placeWaypointOnMap(lat, lon);
+});
+
+function placeWaypointOnMap(lat, lon) {
+    // Update input fields
+    document.getElementById('wp-lat-input').value = lat.toFixed(6);
+    document.getElementById('wp-lon-input').value = lon.toFixed(6);
+
+    // Place or move waypoint marker
+    if (waypointMarker) {
+        waypointMarker.setLatLng([lat, lon]);
+    } else {
+        waypointMarker = L.marker([lat, lon], { icon: waypointIcon }).addTo(wpMap);
+        waypointMarker.bindTooltip('WAYPOINT', {
+            permanent: false,
+            direction: 'top',
+            className: 'wp-tooltip'
+        });
+    }
+
+    // Draw flight path line from drone to waypoint
+    updateFlightPathLine(lat, lon);
+
+    // Update distance display
+    if (lastDroneLat !== 0 && lastDroneLon !== 0) {
+        const dist = haversineDistance(lastDroneLat, lastDroneLon, lat, lon);
+        document.getElementById('wp-distance').innerText = dist < 1000
+            ? dist.toFixed(0) + 'm'
+            : (dist / 1000).toFixed(2) + 'km';
+    }
+}
+
+function updateFlightPathLine(wpLat, wpLon) {
+    if (lastDroneLat === 0 && lastDroneLon === 0) return;
+
+    const coords = [[lastDroneLat, lastDroneLon], [wpLat, wpLon]];
+
+    if (flightPathLine) {
+        flightPathLine.setLatLngs(coords);
+    } else {
+        flightPathLine = L.polyline(coords, {
+            color: '#f43f5e',
+            weight: 2,
+            opacity: 0.7,
+            dashArray: '8, 8'
+        }).addTo(wpMap);
+    }
+}
+
+// --- MANUAL INPUT → MAP SYNC ---
+document.getElementById('wp-lat-input').addEventListener('change', syncInputsToMap);
+document.getElementById('wp-lon-input').addEventListener('change', syncInputsToMap);
+
+function syncInputsToMap() {
+    const lat = parseFloat(document.getElementById('wp-lat-input').value);
+    const lon = parseFloat(document.getElementById('wp-lon-input').value);
+    if (!isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0) {
+        placeWaypointOnMap(lat, lon);
+        wpMap.panTo([lat, lon]);
+    }
+}
+
+// --- SEND WAYPOINT TO DRONE ---
+function sendWaypoint() {
+    const lat = parseFloat(document.getElementById('wp-lat-input').value);
+    const lon = parseFloat(document.getElementById('wp-lon-input').value);
+
+    if (isNaN(lat) || isNaN(lon) || lat === 0 || lon === 0) {
+        alert('⚠️ No waypoint selected! Click on the map or enter coordinates first.');
+        return;
+    }
+
+    // Safety confirmation
+    const dist = (lastDroneLat !== 0 && lastDroneLon !== 0)
+        ? haversineDistance(lastDroneLat, lastDroneLon, lat, lon)
+        : null;
+
+    const distStr = dist !== null
+        ? (dist < 1000 ? dist.toFixed(0) + 'm' : (dist / 1000).toFixed(2) + 'km')
+        : 'unknown distance';
+
+    if (!confirm(
+        `🎯 FLY TO WAYPOINT?\n\n` +
+        `Lat: ${lat.toFixed(6)}\n` +
+        `Lon: ${lon.toFixed(6)}\n` +
+        `Distance: ${distStr}\n\n` +
+        `The drone will switch to AUTO mode and fly to this location.`
+    )) {
+        return;
+    }
+
+    // Send to drone via socket
+    socket.emit('send_waypoint', { lat: lat, lon: lon });
+
+    // Visual feedback on button
+    const btn = document.getElementById('wp-send-btn');
+    btn.classList.add('sent');
+    btn.innerHTML = '<span class="wp-send-icon">✅</span><span>WAYPOINT SENT!</span>';
+
+    setTimeout(() => {
+        btn.classList.remove('sent');
+        btn.innerHTML = '<span class="wp-send-icon">🎯</span><span>FLY TO WAYPOINT</span>';
+    }, 2500);
+}
+
+// --- HAVERSINE DISTANCE ---
+function haversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371000; // Earth radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// --- UPDATE DRONE POSITION FROM TELEMETRY ---
+// This hooks into the existing telemetry socket event
+const originalTelemetryHandlers = socket.listeners('telemetry');
+
+socket.on('telemetry', (data) => {
+    // Update drone marker on map
+    if (data.glat !== undefined && data.glon !== undefined && data.glat !== 0 && data.glon !== 0) {
+        lastDroneLat = data.glat;
+        lastDroneLon = data.glon;
+
+        // Update overlay HUD
+        document.getElementById('wp-drone-pos').innerText =
+            data.glat.toFixed(5) + ', ' + data.glon.toFixed(5);
+
+        // Place or move drone marker
+        if (droneMarker) {
+            droneMarker.setLatLng([data.glat, data.glon]);
+        } else {
+            droneMarker = L.marker([data.glat, data.glon], { icon: droneIcon, zIndexOffset: 1000 }).addTo(wpMap);
+            droneMarker.bindTooltip('DRONE', {
+                permanent: false,
+                direction: 'top',
+                className: 'wp-tooltip'
+            });
+        }
+
+        // Auto-center map on first GPS fix
+        if (!hasAutoCenter) {
+            wpMap.setView([data.glat, data.glon], 17);
+            hasAutoCenter = true;
+        }
+
+        // Update home marker (home is set on ARM, approximate using first fix)
+        if (data.arm === 1 && !homeMarker) {
+            homeMarker = L.marker([data.glat, data.glon], { icon: homeIcon }).addTo(wpMap);
+            homeMarker.bindTooltip('HOME', {
+                permanent: false,
+                direction: 'top',
+                className: 'wp-tooltip'
+            });
+            document.getElementById('wp-home-pos').innerText =
+                data.glat.toFixed(5) + ', ' + data.glon.toFixed(5);
+        }
+
+        // Update flight path line if waypoint exists
+        if (waypointMarker) {
+            const wpLatLng = waypointMarker.getLatLng();
+            updateFlightPathLine(wpLatLng.lat, wpLatLng.lng);
+
+            // Update distance
+            const dist = haversineDistance(data.glat, data.glon, wpLatLng.lat, wpLatLng.lng);
+            document.getElementById('wp-distance').innerText = dist < 1000
+                ? dist.toFixed(0) + 'm'
+                : (dist / 1000).toFixed(2) + 'km';
+        }
+    }
+
+    // Clear home marker on disarm
+    if (data.arm === 0 && homeMarker) {
+        wpMap.removeLayer(homeMarker);
+        homeMarker = null;
+        document.getElementById('wp-home-pos').innerText = '—';
+    }
+});
+
+// Fix Leaflet rendering in initially hidden/resized panels
+setTimeout(() => { wpMap.invalidateSize(); }, 500);
+

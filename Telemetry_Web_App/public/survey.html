@@ -37,40 +37,203 @@
             align-items: center; 
             box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
         }
+        .stat-label { 
+            font-size: 0.6em; 
+            color: #64748b; 
+            font-weight: 600; 
+            letter-spacing: 1px; 
+            text-transform: uppercase; 
+        }
+        .stat-value { 
+            font-size: 0.95em; 
+            color: #f8fafc; 
+            font-weight: 700; 
+            font-family: monospace; 
+        }
+        .stat-box { 
+            text-align: left;
+            padding: 4px 0;
+        }
+        .stat-divider {
+            width: 100%;
+            height: 1px;
+            background: rgba(255,255,255,0.06);
+            margin: 4px 0;
+        }
+        .btn-survey {
+            border: none; cursor: pointer; 
+            padding: 7px 14px; font-size: 0.75em; 
+            font-weight: 700; letter-spacing: 1px; 
+            border-radius: 50px; white-space: nowrap; 
+            transition: all 0.3s;
+        }
     </style>
 </head>
 <body>
+    <!-- Main Control Bar -->
     <div class="floating-controls">
-        <div style="display: flex; align-items: center; gap: 15px; border-right: 1px solid rgba(255,255,255,0.1); padding-right: 20px;">
-            <span id="survey-baseline-val" style="font-family: monospace; font-size: 1.1em; color: var(--cyan); white-space: nowrap; font-weight: 600; letter-spacing: 1px;">0.00 µT</span>
-            <button style="border: none; cursor: pointer; padding: 8px 20px; font-size: 0.85em; font-weight: 700; letter-spacing: 1px; border-radius: 50px; background: rgba(14, 165, 233, 0.15); border: 1px solid rgba(14, 165, 233, 0.4); color: var(--cyan); white-space: nowrap; transition: all 0.3s; box-shadow: 0 0 10px rgba(14,165,233,0.2);" onclick="setMagneticBaseline()" onmouseover="this.style.background='var(--cyan)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(14, 165, 233, 0.15)'; this.style.color='var(--cyan)';">
+        <!-- Nav Back to Command Dashboard -->
+        <div style="display: flex; align-items: center; border-right: 1px solid rgba(255,255,255,0.1); padding-right: 18px;">
+            <a href="/" style="text-decoration: none;">
+                <button class="btn-survey" style="background: rgba(14, 165, 233, 0.15); border: 1px solid rgba(14, 165, 233, 0.4); color: var(--cyan); box-shadow: 0 0 10px rgba(14,165,233,0.15);" onmouseover="this.style.background='var(--cyan)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(14, 165, 233, 0.15)'; this.style.color='var(--cyan)';">
+                    🚀 COMMAND
+                </button>
+            </a>
+        </div>
+
+        <!-- Baseline Section -->
+        <div style="display: flex; align-items: center; gap: 12px; border-right: 1px solid rgba(255,255,255,0.1); padding-right: 18px;">
+            <span id="survey-baseline-val" style="font-family: monospace; font-size: 0.95em; color: var(--cyan); white-space: nowrap; font-weight: 600; letter-spacing: 1px;">0.00 µT</span>
+            <button class="btn-survey" style="background: rgba(14, 165, 233, 0.15); border: 1px solid rgba(14, 165, 233, 0.4); color: var(--cyan); box-shadow: 0 0 10px rgba(14,165,233,0.2);" onclick="setMagneticBaseline()" onmouseover="this.style.background='var(--cyan)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(14, 165, 233, 0.15)'; this.style.color='var(--cyan)';">
                 SET BASELINE
+            </button>
+            <button id="btn-auto-baseline" class="btn-survey" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: var(--emerald);" onclick="startAutoBaseline()" onmouseover="this.style.background='var(--emerald)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(16, 185, 129, 0.15)'; this.style.color='var(--emerald)';">
+                AUTO BASELINE
             </button>
         </div>
         
-        <div style="display: flex; align-items: center; gap: 12px; padding-right: 20px; border-right: 1px solid rgba(255,255,255,0.1);">
-            <label class="toggle-switch" style="margin: 0; flex-shrink: 0; transform: scale(0.9);">
+        <!-- Scanner Toggle -->
+        <div style="display: flex; align-items: center; gap: 10px; padding-right: 18px; border-right: 1px solid rgba(255,255,255,0.1);">
+            <label class="toggle-switch" style="margin: 0; flex-shrink: 0; transform: scale(0.85);">
                 <input type="checkbox" id="heatmap-toggle" onchange="toggleHeatmap()">
                 <span class="slider round"></span>
             </label>
-            <span style="font-size: 0.9em; color: #f8fafc; font-weight: 700; letter-spacing: 1px; white-space: nowrap;">AEROMAGNETIC SCANNER</span>
+            <span style="font-size: 0.8em; color: #f8fafc; font-weight: 700; letter-spacing: 1px; white-space: nowrap;">SCANNER</span>
         </div>
 
-        <div style="display: flex; align-items: center; padding-left: 5px; gap: 10px;">
-            <button id="btn-generate-2d" style="border: none; cursor: pointer; padding: 8px 15px; font-size: 0.8em; font-weight: 700; letter-spacing: 1px; border-radius: 50px; background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.4); color: var(--rose); white-space: nowrap; transition: all 0.3s;" onclick="generateMap('heatmap')" onmouseover="this.style.background='var(--rose)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(244, 63, 94, 0.15)'; this.style.color='var(--rose)';">
+        <!-- GPS Quality Badge -->
+        <div style="display: flex; align-items: center; padding-right: 18px; border-right: 1px solid rgba(255,255,255,0.1);">
+            <span id="gps-quality-badge" style="font-family: monospace; font-size: 0.7em; font-weight: 700; letter-spacing: 1px; color: #64748b; padding: 5px 12px; border-radius: 50px; border: 1px solid rgba(100,116,139,0.4); white-space: nowrap; transition: all 0.3s;">
+                WAITING...
+            </span>
+        </div>
+
+        <!-- Layer Toggle Buttons -->
+        <div style="display: flex; align-items: center; gap: 8px; padding-right: 18px; border-right: 1px solid rgba(255,255,255,0.1);">
+            <button id="btn-gradient" class="btn-survey" style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); color: #6366f1;" onclick="toggleGradientLayer()" onmouseover="if(this.style.background!=='rgb(99, 102, 241)')this.style.background='rgba(99,102,241,0.35)';" onmouseout="if(this.style.color!=='rgb(255, 255, 255)')this.style.background='rgba(99, 102, 241, 0.15)';">
+                GRADIENT
+            </button>
+            <button id="btn-grid" class="btn-survey" style="background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #f59e0b;" onclick="toggleGridOverlay()" onmouseover="if(this.style.background!=='rgb(245, 158, 11)')this.style.background='rgba(245,158,11,0.35)';" onmouseout="if(this.style.color!=='rgb(255, 255, 255)')this.style.background='rgba(245, 158, 11, 0.15)';">
+                GRID
+            </button>
+        </div>
+
+        <!-- Map & Export Buttons -->
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <button id="btn-generate-2d" class="btn-survey" style="background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.4); color: var(--rose);" onclick="generateMap('heatmap')" onmouseover="this.style.background='var(--rose)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(244, 63, 94, 0.15)'; this.style.color='var(--rose)';">
                 2D MAP
             </button>
-            <button id="btn-generate-3d" style="border: none; cursor: pointer; padding: 8px 15px; font-size: 0.8em; font-weight: 700; letter-spacing: 1px; border-radius: 50px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: var(--emerald); white-space: nowrap; transition: all 0.3s;" onclick="generateMap('surface')" onmouseover="this.style.background='var(--emerald)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(16, 185, 129, 0.15)'; this.style.color='var(--emerald)';">
+            <button id="btn-generate-3d" class="btn-survey" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: var(--emerald);" onclick="generateMap('surface')" onmouseover="this.style.background='var(--emerald)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(16, 185, 129, 0.15)'; this.style.color='var(--emerald)';">
                 3D SURFACE
             </button>
-            <button id="btn-close-map" style="display: none; border: none; cursor: pointer; padding: 8px 20px; font-size: 0.85em; font-weight: 700; letter-spacing: 1px; border-radius: 50px; background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.4); color: #cbd5e1; white-space: nowrap; transition: all 0.3s;" onclick="closeContourMap()" onmouseover="this.style.background='#94a3b8'; this.style.color='#0f172a';" onmouseout="this.style.background='rgba(148, 163, 184, 0.15)'; this.style.color='#cbd5e1';">
-                BACK TO LIVE VIEW
+            <button id="btn-export-csv" class="btn-survey" style="background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.4); color: #a855f7;" onclick="exportSurveyCSV()" onmouseover="this.style.background='#a855f7'; this.style.color='#fff';" onmouseout="this.style.background='rgba(168, 85, 247, 0.15)'; this.style.color='#a855f7';">
+                EXPORT CSV
+            </button>
+            <button id="btn-close-map" class="btn-survey" style="display: none; background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.4); color: #cbd5e1;" onclick="closeContourMap()" onmouseover="this.style.background='#94a3b8'; this.style.color='#0f172a';" onmouseout="this.style.background='rgba(148, 163, 184, 0.15)'; this.style.color='#cbd5e1';">
+                BACK TO LIVE
             </button>
         </div>
     </div>
+
+    <!-- Mission Planner Panel (Bottom-left, away from header) -->
+    <div id="mission-planner" style="position: absolute; bottom: 30px; left: 20px; z-index: 1000; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px); padding: 12px 18px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 10px;">
+        <div style="color: #94a3b8; font-size: 0.6em; font-weight: 700; letter-spacing: 2px;">MISSION PLANNER</div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <button id="btn-plan-area" class="btn-survey" style="background: rgba(251, 146, 60, 0.15); border: 1px solid rgba(251, 146, 60, 0.4); color: #fb923c;" onclick="startAreaSelection()" onmouseover="this.style.background='#fb923c'; this.style.color='#fff';" onmouseout="if(!window._planningActive){this.style.background='rgba(251, 146, 60, 0.15)'; this.style.color='#fb923c';}">
+                📐 PLAN AREA
+            </button>
+            <div style="display: flex; align-items: center; gap: 4px;">
+                <input id="line-spacing" type="number" value="5" min="1" max="50" step="1" style="width: 42px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #f8fafc; border-radius: 6px; padding: 5px 6px; font-size: 0.7em; font-family: monospace; text-align: center; font-weight: 700;">
+                <span style="font-size: 0.6em; color: #64748b; font-weight: 600; white-space: nowrap;">m gap</span>
+            </div>
+            <button id="btn-start-mission" class="btn-survey" style="display: none; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: var(--emerald);" onclick="startSurveyMission()" onmouseover="this.style.background='var(--emerald)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(16, 185, 129, 0.15)'; this.style.color='var(--emerald)';">
+                ▶ START
+            </button>
+            <button id="btn-pause-mission" class="btn-survey" style="display: none; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #f59e0b;" onclick="pauseSurveyMission()" onmouseover="this.style.background='#f59e0b'; this.style.color='#fff';" onmouseout="this.style.background='rgba(245, 158, 11, 0.15)'; this.style.color='#f59e0b';">
+                ⏸ PAUSE
+            </button>
+            <button id="btn-resume-mission" class="btn-survey" style="display: none; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: var(--emerald);" onclick="resumeSurveyMission()" onmouseover="this.style.background='var(--emerald)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(16, 185, 129, 0.15)'; this.style.color='var(--emerald)';">
+                ▶ RESUME
+            </button>
+            <button id="btn-abort-mission" class="btn-survey" style="display: none; background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.4); color: var(--rose);" onclick="abortSurveyMission()" onmouseover="this.style.background='var(--rose)'; this.style.color='#fff';" onmouseout="this.style.background='rgba(244, 63, 94, 0.15)'; this.style.color='var(--rose)';">
+                ✖ ABORT
+            </button>
+            <button id="btn-clear-plan" class="btn-survey" style="display: none; background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.4); color: #94a3b8;" onclick="clearSurveyPlan()" onmouseover="this.style.background='#94a3b8'; this.style.color='#0f172a';" onmouseout="this.style.background='rgba(148, 163, 184, 0.15)'; this.style.color='#94a3b8';">
+                ✕ CLEAR
+            </button>
+        </div>
+        <!-- Inline Mission Progress -->
+        <div id="mission-progress" style="display: none;">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                <span id="mission-state-badge" style="font-size: 0.65em; font-weight: 700; letter-spacing: 1px; padding: 3px 8px; border-radius: 50px; background: rgba(100,116,139,0.3); color: #94a3b8;">IDLE</span>
+                <span id="mission-wp-counter" style="font-family: monospace; font-size: 0.95em; color: #f8fafc; font-weight: 700;">0 / 0</span>
+            </div>
+            <div style="width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
+                <div id="mission-progress-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #0ea5e9, #10b981); border-radius: 2px; transition: width 0.5s ease;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Survey Statistics Panel (Right Side) -->
+    <div id="survey-stats" style="display: none; position: absolute; top: 85px; right: 20px; z-index: 1000; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px); padding: 18px 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); flex-direction: column; gap: 6px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); min-width: 175px;">
+        
+        <!-- Header -->
+        <div style="color: #94a3b8; font-size: 0.7em; font-weight: 700; letter-spacing: 2px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px; margin-bottom: 2px;">SURVEY ANALYTICS</div>
+        
+        <!-- Data Collection -->
+        <div class="stat-box">
+            <div class="stat-label">Points Collected</div>
+            <div class="stat-value" id="stat-points" style="color: var(--cyan); font-size: 1.3em;">0</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Area Covered</div>
+            <div class="stat-value" id="stat-area" style="color: var(--emerald);">0 m²</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Duration</div>
+            <div class="stat-value" id="stat-time" style="color: #eab308;">0:00</div>
+        </div>
+
+        <div class="stat-divider"></div>
+
+        <!-- Sensor Quality -->
+        <div class="stat-box">
+            <div class="stat-label">Mag Field (TMI)</div>
+            <div class="stat-value" id="stat-mag" style="color: #a855f7;">-- µT</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label" id="stat-noise-label">Noise (4th Diff)</div>
+            <div class="stat-value" id="stat-noise" style="color: #10b981;">0.00 µT</div>
+        </div>
+        
+        <div class="stat-divider"></div>
+
+        <!-- Corrections Applied -->
+        <div class="stat-box">
+            <div class="stat-label">Diurnal Drift</div>
+            <div class="stat-value" id="stat-drift" style="color: #fb923c;">+0.000 µT/hr</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label" id="stat-line-label">Flight Segment</div>
+            <div class="stat-value" id="stat-line" style="color: #10b981;">SURVEY LINE</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-label">Turn Rejects</div>
+            <div class="stat-value" id="stat-rejects" style="color: #ef4444;">0</div>
+        </div>
+
+        <div class="stat-divider"></div>
+
+        <!-- Grid Coverage -->
+        <div class="stat-box">
+            <div class="stat-label">Grid Coverage</div>
+            <div class="stat-value" id="stat-grid" style="color: #f59e0b;">0 cells · 0%</div>
+        </div>
+    </div>
     
+    <!-- Magnetic Anomaly Legend -->
     <div id="survey-legend" style="display: none; position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(10px); padding: 15px 25px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); flex-direction: column; gap: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-        <div style="color: #cbd5e1; font-size: 0.8em; font-weight: 600; letter-spacing: 1px; text-align: center; margin-bottom: 5px;">MAGNETIC ANOMALY (µT DIFFERENCE)</div>
+        <div style="color: #cbd5e1; font-size: 0.8em; font-weight: 600; letter-spacing: 1px; text-align: center; margin-bottom: 5px;">MAGNETIC ANOMALY (µT DIFFERENCE) — Altitude Normalized, Drift Corrected</div>
         <div style="width: 450px; height: 12px; border-radius: 6px; background: linear-gradient(to right, rgba(14, 165, 233, 0) 0%, rgb(14, 165, 233) 20%, rgb(132, 204, 22) 50%, rgb(234, 179, 8) 80%, rgb(239, 68, 68) 100%);"></div>
         <div style="display: flex; justify-content: space-between; color: #94a3b8; font-size: 0.75em; font-weight: 700; font-family: monospace; margin-top: 5px;">
             <div style="text-align: center; width: 20%;"><span>0</span><br><span style="font-size: 0.85em; color: #64748b; font-family: 'Outfit', sans-serif;">Normal Field</span></div>
