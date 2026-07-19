@@ -4,11 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>UAV Telemetry Pro</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+    <!-- Three.js for 3D Attitude Indicator -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <!-- Leaflet Map for Waypoint Selection -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -18,8 +20,15 @@
         <!-- Header -->
         <header class="top-bar">
             <div class="logo">
+                <a href="/fleet.html" class="fleet-back-btn" title="Back to Fleet">
+                    <span>◂</span> FLEET
+                </a>
                 <span class="logo-icon">🚀</span>
-                <h1>UAV <span class="highlight">COMMAND</span></h1>
+                <h1>AERO<span class="highlight">NEXUS</span></h1>
+                <div class="drone-name-badge" id="drone-name-badge" style="display:none;">
+                    <div class="drone-name-dot"></div>
+                    <span id="active-drone-name">—</span>
+                </div>
             </div>
             <div class="status-badges">
                 <div class="mode-selector">
@@ -31,11 +40,11 @@
                     </select>
                 </div>
                 <div class="mode-selector" style="display: flex; gap: 5px;">
-                    <button class="btn-save" style="background: rgba(16, 185, 129, 0.2); border-color: var(--emerald); color: var(--emerald); padding: 5px 15px; margin: 0; min-width: 80px;" onclick="toggleArm(1)">ARM</button>
-                    <button class="btn-save" style="background: rgba(244, 63, 94, 0.2); border-color: var(--rose); color: var(--rose); padding: 5px 15px; margin: 0; min-width: 80px;" onclick="toggleArm(0)">DISARM</button>
+                    <button class="btn-save" style="background-color: #059669; padding: 5px 15px; margin: 0; min-width: 80px;" onclick="toggleArm(1)">ARM</button>
+                    <button class="btn-save" style="background-color: #dc2626; padding: 5px 15px; margin: 0; min-width: 80px;" onclick="toggleArm(0)">DISARM</button>
                 </div>
-                <a href="/survey.html" style="text-decoration: none;">
-                    <button class="btn-save" style="background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.5); color: #a855f7; padding: 5px 15px; margin: 0; min-width: 80px; cursor: pointer; font-weight: 700; letter-spacing: 1px; font-size: 0.75em; transition: all 0.3s;" onmouseover="this.style.background='#a855f7'; this.style.color='#fff';" onmouseout="this.style.background='rgba(168, 85, 247, 0.2)'; this.style.color='#a855f7';">📡 SURVEY MAP</button>
+                <a href="#" id="survey-link" style="text-decoration: none;">
+                    <button class="btn-save" style="background-color: #9333ea; padding: 5px 15px; margin: 0; min-width: 80px; font-weight: 700; font-size: 0.75em;">📡 SURVEY MAP</button>
                 </a>
                 <div class="badge" id="conn-badge">
                     <div class="indicator red" id="conn-indicator"></div>
@@ -50,6 +59,7 @@
                 <div class="badge" id="batt-badge">
                     <span id="val-batt">BAT: --.-V</span>
                 </div>
+                <button class="btn-save" style="background-color: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 5px 15px; margin: 0; min-width: 80px; width: auto;" onclick="droneLogout()">LOGOUT</button>
             </div>
         </header>
 
@@ -57,8 +67,11 @@
             <!-- Left Column: Flight Instruments -->
             <div class="col-left">
                 <div class="glass-panel widget-horizon">
-                    <h2>Attitude</h2>
-                    <div class="horizon-container">
+                    <h2>3D Attitude</h2>
+                    <!-- 3D Drone Attitude Model -->
+                    <div class="attitude-3d-container" id="attitude-3d"></div>
+                    <!-- Fallback 2D Horizon -->
+                    <div class="horizon-container" style="display:none;">
                         <div class="artificial-horizon" id="art-horizon">
                             <div class="sky"></div>
                             <div class="ground"></div>

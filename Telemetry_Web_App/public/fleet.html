@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fleet Command Center — UAV Platform</title>
+    <meta name="description" content="Multi-drone fleet management platform with real-time telemetry, 3D visualization, and mission control.">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="fleet.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <!-- Animated background particles -->
+    <canvas id="bg-particles"></canvas>
+
+    <div class="fleet-app">
+        <!-- ============ TOP HEADER BAR ============ -->
+        <header class="fleet-header">
+            <div class="header-left">
+                <div class="logo-3d-container" id="header-drone-3d"></div>
+                <div class="header-title">
+                    <h1>AERO<span class="gradient-text">NEXUS</span></h1>
+                    <span class="header-subtitle">Multi-Drone Operations Platform</span>
+                </div>
+            </div>
+            <div class="header-center">
+                <div class="stat-chip" id="stat-total">
+                    <div class="stat-icon">📡</div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="total-drones">0</span>
+                        <span class="stat-label">CONNECTED</span>
+                    </div>
+                </div>
+                <div class="stat-chip" id="stat-armed">
+                    <div class="stat-icon armed-icon">⚡</div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="armed-count">0</span>
+                        <span class="stat-label">ARMED</span>
+                    </div>
+                </div>
+                <div class="stat-chip" id="stat-pending">
+                    <div class="stat-icon pending-icon">🔗</div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="pending-count">0</span>
+                        <span class="stat-label">PENDING</span>
+                    </div>
+                </div>
+                <div class="stat-chip" id="stat-alerts">
+                    <div class="stat-icon alert-icon">🔋</div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="alert-count">0</span>
+                        <span class="stat-label">ALERTS</span>
+                    </div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="system-status" id="system-status">
+                    <div class="status-dot online"></div>
+                    <span>SYSTEM ONLINE</span>
+                </div>
+                <button class="btn-assign" style="margin-left: 15px;" onclick="fleetLogout()">LOGOUT</button>
+                <div class="header-time" id="header-time">--:--:--</div>
+            </div>
+        </header>
+
+        <!-- ============ MAIN CONTENT ============ -->
+        <div class="fleet-content">
+
+            <!-- PENDING CONNECTIONS PANEL (shows when there are pending) -->
+            <section class="pending-section" id="pending-section" style="display: none;">
+                <div class="section-header">
+                    <h2><span class="section-icon">🔗</span> Pending Connections</h2>
+                    <button class="btn-auto-assign" id="btn-auto-assign" onclick="autoAssignAll()">
+                        <span>⚡</span> AUTO-ASSIGN ALL
+                    </button>
+                </div>
+                <div class="pending-grid" id="pending-grid">
+                    <!-- Dynamically populated -->
+                </div>
+            </section>
+
+            <!-- FLEET MAP -->
+            <section class="map-section">
+                <div class="section-header">
+                    <h2><span class="section-icon">🌍</span> Fleet Operations Map</h2>
+                    <div class="map-controls">
+                        <button class="map-ctrl-btn" onclick="fitAllDrones()">FIT ALL</button>
+                        <button class="map-ctrl-btn" onclick="toggleMapStyle()">TOGGLE THEME</button>
+                    </div>
+                </div>
+                <div class="fleet-map-wrapper">
+                    <div id="fleet-map"></div>
+                    <!-- Map HUD overlay -->
+                    <div class="map-hud">
+                        <div class="map-hud-item">
+                            <span class="map-hud-label">DRONES</span>
+                            <span class="map-hud-value" id="map-drone-count">0</span>
+                        </div>
+                        <div class="map-hud-divider"></div>
+                        <div class="map-hud-item">
+                            <span class="map-hud-label">GPS FIXES</span>
+                            <span class="map-hud-value" id="map-gps-count">0</span>
+                        </div>
+                        <div class="map-hud-divider"></div>
+                        <div class="map-hud-item">
+                            <span class="map-hud-label">AVG ALT</span>
+                            <span class="map-hud-value" id="map-avg-alt">--</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- DRONE GRID -->
+            <section class="drones-section">
+                <div class="section-header">
+                    <h2><span class="section-icon">🚁</span> Active Fleet</h2>
+                    <div class="view-toggles">
+                        <button class="view-btn active" onclick="setView('grid')" id="view-grid">Grid</button>
+                        <button class="view-btn" onclick="setView('list')" id="view-list">List</button>
+                    </div>
+                </div>
+
+                <div class="drone-grid" id="drone-grid">
+                    <!-- Dynamically populated drone cards -->
+                </div>
+
+                <!-- Empty state -->
+                <div class="empty-state" id="empty-state">
+                    <div class="empty-3d-container" id="empty-3d"></div>
+                    <h3>No Drones Connected</h3>
+                    <p>Power on your drones and connect their ESP32 telemetry modules to this server's network. They will appear here automatically.</p>
+                    <div class="connection-info">
+                        <div class="conn-info-item">
+                            <span class="conn-info-icon">📡</span>
+                            <span>WiFi TCP Port: <strong>5000</strong></span>
+                        </div>
+                        <div class="conn-info-item">
+                            <span class="conn-info-icon">🔌</span>
+                            <span>USB: Auto-detect STM32</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ============ FOOTER ============ -->
+        <footer class="fleet-footer">
+            <span>UAV Fleet Command Center v2.0</span>
+            <span class="footer-divider">|</span>
+            <span id="uptime">Uptime: 0s</span>
+        </footer>
+    </div>
+
+    <script src="fleet.js"></script>
+</body>
+</html>
