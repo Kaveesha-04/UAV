@@ -1,4 +1,51 @@
-const socket = io();
+// =============================================
+// MULTI-DRONE AWARE — Read drone ID from URL
+// =============================================
+const urlParams = new URLSearchParams(window.location.search);
+const DRONE_ID = urlParams.get('drone') || null;
+const IS_FLEET_MODE = DRONE_ID !== null;
+
+// Enforce Drone Authentication
+let droneToken = null;
+if (IS_FLEET_MODE) {
+    droneToken = localStorage.getItem(`droneToken_${DRONE_ID}`);
+    if (!droneToken) {
+        window.location.href = `/drone_login.html?drone=${encodeURIComponent(DRONE_ID)}&target=/survey.html`;
+    }
+}
+
+const socket = io({
+    auth: IS_FLEET_MODE ? { token: droneToken } : {}
+});
+
+// Setup drone-aware UI
+if (IS_FLEET_MODE) {
+    // Update command link to include drone param
+    const cmdLink = document.getElementById('command-link');
+    if (cmdLink) cmdLink.href = `/index.html?drone=${encodeURIComponent(DRONE_ID)}`;
+    // Show drone name
+    const nameEl = document.getElementById('survey-drone-name');
+    if (nameEl) { nameEl.textContent = DRONE_ID; nameEl.style.display = 'inline-block'; }
+    document.title = `${DRONE_ID} — Survey`;
+}
+
+// Command wrapper for multi-drone
+function emitSurveyCommand(type, data) {
+    if (IS_FLEET_MODE) {
+        socket.emit('drone:command', { droneId: DRONE_ID, type, payload: data || {}, droneToken: droneToken });
+    } else {
+        socket.emit(type, data || {});
+    }
+}
+
+// Handle Authentication Errors
+socket.on('drone:auth_error', (data) => {
+    if (data.droneId === DRONE_ID) {
+        alert(data.message);
+        localStorage.removeItem(`droneToken_${DRONE_ID}`);
+        window.location.href = `/drone_login.html?drone=${encodeURIComponent(DRONE_ID)}&target=/survey.html`;
+    }
+});
 
 // Map Initialization
 const map = L.map('map', {
@@ -6,7 +53,7 @@ const map = L.map('map', {
 }).setView([0, 0], 2);
 
 L.control.zoom({
-    position: 'bottomright'
+    position: 'topleft'
 }).addTo(map);
 
 // Satellite map tiles
@@ -608,7 +655,18 @@ function exportSurveyCSV() {
 //  MAIN TELEMETRY HANDLER
 // =============================================
 
-socket.on('telemetry', (data) => {
+// Subscribe to correct telemetry event
+function registerTelemetryHandler(handler) {
+    if (IS_FLEET_MODE) {
+        socket.on('drone:telemetry', (msg) => {
+            if (msg.droneId === DRONE_ID) handler(msg.data);
+        });
+    } else {
+        socket.on('telemetry', handler);
+    }
+}
+
+registerTelemetryHandler((data) => {
     // Initial centering
     if (!mapInitialized && data.glat !== 0 && data.glon !== 0) {
         map.setView([data.glat, data.glon], 18);
@@ -1130,21 +1188,21 @@ function startSurveyMission() {
     )) return;
     
     // 1. Reset the drone's waypoint queue
-    socket.emit('survey_reset');
+    emitSurveyCommand('survey_reset');
     
     // 2. Send all waypoints (with small delay between each)
     let sent = 0;
     const sendNext = () => {
         if (sent < planWaypoints.length) {
             const wp = planWaypoints[sent];
-            socket.emit('survey_waypoint', { lat: wp.lat.toFixed(6), lon: wp.lon.toFixed(6) });
+            emitSurveyCommand('survey_waypoint', { lat: wp.lat.toFixed(6), lon: wp.lon.toFixed(6) });
             sent++;
             document.getElementById('mission-state-badge').innerText = `UPLOADING ${sent}/${planWaypoints.length}`;
             setTimeout(sendNext, 50); // 50ms between commands to prevent USB buffer overflow
         } else {
             // 3. All waypoints sent — start the mission!
             setTimeout(() => {
-                socket.emit('survey_start');
+                emitSurveyCommand('survey_start');
                 
                 document.getElementById('btn-start-mission').style.display = 'none';
                 document.getElementById('btn-clear-plan').style.display = 'none';
@@ -1157,20 +1215,20 @@ function startSurveyMission() {
 }
 
 function pauseSurveyMission() {
-    socket.emit('survey_pause');
+    emitSurveyCommand('survey_pause');
     document.getElementById('btn-pause-mission').style.display = 'none';
     document.getElementById('btn-resume-mission').style.display = 'inline-block';
 }
 
 function resumeSurveyMission() {
-    socket.emit('survey_resume');
+    emitSurveyCommand('survey_resume');
     document.getElementById('btn-resume-mission').style.display = 'none';
     document.getElementById('btn-pause-mission').style.display = 'inline-block';
 }
 
 function abortSurveyMission() {
     if (!confirm('⚠️ ABORT the survey mission? The drone will hold position (LOITER).')) return;
-    socket.emit('survey_abort');
+    emitSurveyCommand('survey_abort');
     
     // Reset UI
     document.getElementById('btn-pause-mission').style.display = 'none';

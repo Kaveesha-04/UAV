@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Access — UAV Command</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="fleet.css">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            background: #0a0f1a;
+            margin: 0;
+            font-family: 'Outfit', sans-serif;
+        }
+        .login-container {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            width: 350px;
+            text-align: center;
+            position: relative;
+            z-index: 10;
+        }
+        .login-logo {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        .login-title {
+            color: #f8fafc;
+            margin: 0 0 5px 0;
+            font-size: 1.5rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+        }
+        .login-subtitle {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            margin-bottom: 30px;
+            letter-spacing: 1px;
+        }
+        .drone-name {
+            display: inline-block;
+            background: rgba(139, 92, 246, 0.15);
+            color: #a855f7;
+            padding: 4px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            margin-top: 5px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        .input-group label {
+            display: block;
+            color: #64748b;
+            font-size: 0.75rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+        .login-input {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            color: #f8fafc;
+            padding: 12px 15px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.2rem;
+            letter-spacing: 8px;
+            text-align: center;
+            box-sizing: border-box;
+            outline: none;
+            transition: all 0.3s;
+        }
+        .login-input:focus {
+            border-color: #a855f7;
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);
+        }
+        .login-btn {
+            width: 100%;
+            background: #a855f7;
+            color: #fff;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .login-btn:hover {
+            background: #c084fc;
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
+        }
+        .error-message {
+            color: var(--rose);
+            font-size: 0.8rem;
+            margin-top: 15px;
+            display: none;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: #64748b;
+            text-decoration: none;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: color 0.3s;
+        }
+        .back-link:hover {
+            color: #f8fafc;
+        }
+        
+        /* Particle Background */
+        #bg-particles {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="bg-particles"></canvas>
+    
+    <div class="login-container">
+        <div class="login-logo">🚁</div>
+        <h1 class="login-title">AERO<span style="color:#a855f7;">NEXUS</span></h1>
+        <div class="login-subtitle">
+            AUTHORIZATION REQUIRED FOR<br>
+            <span class="drone-name" id="display-drone-name">Loading...</span>
+        </div>
+        
+        <form id="login-form">
+            <div class="input-group">
+                <label>ACCESS PIN</label>
+                <input type="password" id="pin" class="login-input" placeholder="••••" maxlength="8" required>
+            </div>
+            <button type="submit" class="login-btn">VERIFY PIN</button>
+            <div id="error-msg" class="error-message">Invalid PIN.</div>
+        </form>
+        
+        <a href="/fleet.html" class="back-link">◂ Back to Fleet Command</a>
+    </div>
+
+    <script>
+        // Setup Particles
+        const canvas = document.getElementById('bg-particles');
+        const ctx = canvas.getContext('2d');
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        resize(); window.addEventListener('resize', resize);
+        const particles = Array.from({length: 40}, () => ({
+            x: Math.random() * canvas.width, y: Math.random() * canvas.height,
+            vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5,
+            size: Math.random() * 2, opacity: Math.random() * 0.5
+        }));
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles.forEach(p => {
+                p.x += p.vx; p.y += p.vy;
+                if (p.x < 0) p.x = canvas.width; if (p.x > canvas.width) p.x = 0;
+                if (p.y < 0) p.y = canvas.height; if (p.y > canvas.height) p.y = 0;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(168, 85, 247, ${p.opacity})`; ctx.fill();
+            });
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        // Get Drone ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const DRONE_ID = urlParams.get('drone');
+        const redirectTarget = urlParams.get('target') || '/index.html'; // Allows returning to index or survey
+        
+        if (!DRONE_ID) {
+            window.location.href = '/fleet.html';
+        }
+        
+        document.getElementById('display-drone-name').textContent = DRONE_ID;
+
+        // Login Logic
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const pin = document.getElementById('pin').value;
+            const errorMsg = document.getElementById('error-msg');
+            
+            try {
+                const res = await fetch('/api/login/drone', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ droneId: DRONE_ID, pin })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    localStorage.setItem(`droneToken_${DRONE_ID}`, data.token);
+                    window.location.href = `${redirectTarget}?drone=${encodeURIComponent(DRONE_ID)}`;
+                } else {
+                    errorMsg.textContent = data.message;
+                    errorMsg.style.display = 'block';
+                }
+            } catch (err) {
+                errorMsg.textContent = 'Connection error.';
+                errorMsg.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
