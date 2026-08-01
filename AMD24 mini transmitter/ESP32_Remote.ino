@@ -126,7 +126,7 @@ void setup() {
   radio.setPALevel(
       RF24_PA_MAX); // Max power for best range (ensure good 3.3V supply!)
   radio.setDataRate(
-      RF24_250KBPS);    // 250kbps gives significantly better range than 2Mbps
+      RF24_250KBPS); // 250kbps gives significantly better range than 2Mbps
   radio.setChannel(76); // Reverted to 76 (default) to match working config
   radio.setPayloadSize(
       sizeof(Data_Package)); // FORCE 8-byte payload to match STM32!
