@@ -149,22 +149,22 @@ uint16_t prev_time_us;
 float dt;
 
 // PID Controllers (Attitude)
-PID_Controller pid_roll = {0.5f, 0.0f, 0.005f, 0.0f,   0.0f,
+PID_Controller pid_roll = {1.2f, 0.5f, 0.012f, 0.0f,   0.0f,
                            0.0f, 0.0f, 0.0f,  200.0f, -200.0f};
-PID_Controller pid_pitch = {0.5f, 0.0f, 0.005f, 0.0f,   0.0f,
+PID_Controller pid_pitch = {1.2f, 0.5f, 0.012f, 0.0f,   0.0f,
                             0.0f, 0.0f, 0.0f,  200.0f, -200.0f};
-PID_Controller pid_yaw = {0.5f, 0.0f, 0.005f, 0.0f,   0.0f,
+PID_Controller pid_yaw = {1.0f, 0.5f, 0.000f, 0.0f,   0.0f,
                           0.0f, 0.0f, 0.0f, 200.0f, -200.0f};
 
 // PID Controllers (Altitude and GPS)
 PID_Controller pid_alt = {
-    50.0f, 10.0f, 5.0f, 0.0f,   0.0f,
+    50.0f, 10.0f, 15.0f, 0.0f,   0.0f,
     0.0f, 0.0f, 0.0f, 300.0f, -200.0f}; // Output is throttle override
 PID_Controller pid_gps_pitch = {
-    0.05f, 0.0f, 0.02f, 0.0f,  0.0f,
+    0.05f, 0.01f, 0.02f, 0.0f,  0.0f,
     0.0f,  0.0f, 0.0f,  20.0f, -20.0f}; // Output is pitch angle (max 20 deg)
 PID_Controller pid_gps_roll = {
-    0.05f, 0.0f, 0.02f, 0.0f,  0.0f,
+    0.05f, 0.01f, 0.02f, 0.0f,  0.0f,
     0.0f,  0.0f, 0.0f,  20.0f, -20.0f}; // Output is roll angle (max 20 deg)
 
 // Navigation State Variables
