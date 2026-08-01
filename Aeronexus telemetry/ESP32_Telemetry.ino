@@ -1,9 +1,9 @@
 #include <WiFi.h>
 
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+const char* ssid = "YOUR_WIFI_SSID";         // Replace with your WiFi network name
+const char* password = "YOUR_WIFI_PASSWORD";   // Replace with your WiFi password
 
-const char* server_ip = "YOUR_PC_LOCAL_IP"; // PC'S LOCAL IP ADDRESS (Updated automatically)
+const char* server_ip = "YOUR_PC_LOCAL_IP";    // Replace with your PC's local IP address (e.g. "192.168.1.100")
 const uint16_t server_port = 5000;
 
 WiFiClient client;
