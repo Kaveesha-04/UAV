@@ -1,9 +1,13 @@
-# Node.js Web App
+# Node.js
 Telemetry_Web_App/node_modules/
+Aeronexus dashboard/node_modules/
+node_modules/
 
 # STM32 CubeIDE Build Files
 UAV Template/Debug/
 UAV Template/Release/
+Aeronexus firmware/Debug/
+Aeronexus firmware/Release/
 **/*.elf
 **/*.bin
 **/*.hex
@@ -13,7 +17,19 @@ UAV Template/Release/
 
 # ESP32 Build Files
 ESP32_Telemetry/build/
+Aeronexus telemetry/build/
+AMD24 mini transmitter/build/
+
+# IDE & Editor Files
+.vscode/
+.metadata/
 
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+
+# Scratch / temp files
+scratch.*
