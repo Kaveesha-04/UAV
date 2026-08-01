@@ -40,6 +40,7 @@
 #include "nrf24.h"
 #include "pid.h"
 #include "qmc5883l.h"
+#include "auto_survey.h"
 
 /* USER CODE END Includes */
 
@@ -98,6 +99,12 @@ uint8_t mag_type = 0; // 0 = None, 0x0D = QMC5883L, 0x1E = HMC5883L, 0x2C = QMC5
 int16_t mag_x = 0, mag_y = 0, mag_z = 0;
 float mag_offset_x = 0.0f, mag_offset_y = 0.0f, mag_offset_z = 0.0f;
 
+// Survey-Only Magnetometer Averaging (does NOT affect flight heading)
+// Accumulates readings over the 50-tick telemetry window for noise reduction
+int32_t mag_sum_x = 0, mag_sum_y = 0, mag_sum_z = 0;
+uint8_t mag_avg_count = 0;
+int16_t mag_avg_x = 0, mag_avg_y = 0, mag_avg_z = 0;
+
 float Get_Mag_Heading(void) {
   if (mag_type == 0)
     return 0.0f;
@@ -142,22 +149,22 @@ uint16_t prev_time_us;
 float dt;
 
 // PID Controllers (Attitude)
-PID_Controller pid_roll = {0.5f, 0.0f, 0.005f, 0.0f,   0.0f,
+PID_Controller pid_roll = {1.2f, 0.5f, 0.012f, 0.0f,   0.0f,
                            0.0f, 0.0f, 0.0f,  200.0f, -200.0f};
-PID_Controller pid_pitch = {0.5f, 0.0f, 0.005f, 0.0f,   0.0f,
+PID_Controller pid_pitch = {1.2f, 0.5f, 0.012f, 0.0f,   0.0f,
                             0.0f, 0.0f, 0.0f,  200.0f, -200.0f};
-PID_Controller pid_yaw = {0.5f, 0.0f, 0.005f, 0.0f,   0.0f,
+PID_Controller pid_yaw = {1.0f, 0.5f, 0.000f, 0.0f,   0.0f,
                           0.0f, 0.0f, 0.0f, 200.0f, -200.0f};
 
 // PID Controllers (Altitude and GPS)
 PID_Controller pid_alt = {
-    50.0f, 10.0f, 5.0f, 0.0f,   0.0f,
+    50.0f, 10.0f, 15.0f, 0.0f,   0.0f,
     0.0f, 0.0f, 0.0f, 300.0f, -200.0f}; // Output is throttle override
 PID_Controller pid_gps_pitch = {
-    0.05f, 0.0f, 0.02f, 0.0f,  0.0f,
+    0.05f, 0.01f, 0.02f, 0.0f,  0.0f,
     0.0f,  0.0f, 0.0f,  20.0f, -20.0f}; // Output is pitch angle (max 20 deg)
 PID_Controller pid_gps_roll = {
-    0.05f, 0.0f, 0.02f, 0.0f,  0.0f,
+    0.05f, 0.01f, 0.02f, 0.0f,  0.0f,
     0.0f,  0.0f, 0.0f,  20.0f, -20.0f}; // Output is roll angle (max 20 deg)
 
 // Navigation State Variables
@@ -618,6 +625,12 @@ int main(void) {
         else if (mag_type == 0x2C)
           QMC5883P_Read(&hi2c1);
         BMP280_Read_Data(&hspi2);
+
+        // Accumulate mag readings for survey averaging (does NOT touch flight mag_x/y/z)
+        mag_sum_x += mag_x;
+        mag_sum_y += mag_y;
+        mag_sum_z += mag_z;
+        mag_avg_count++;
       }
 
       // --- GPS PARSING (Low Priority) ---
@@ -626,6 +639,23 @@ int main(void) {
         gps_string_ready = 0;
         GPS_Parse(gps_parse_buffer);
         gps_parsing = 0; // UNLOCK buffer
+      }
+
+      // --- AUTO SURVEY WAYPOINT SEQUENCER ---
+      if (Survey_GetState() == SURVEY_RUNNING && gps_fix > 0) {
+        if (!Survey_Update(gps_lat, gps_lon, &wp_lat, &wp_lon)) {
+          // Survey finished or error — switch to loiter hold
+          if (Survey_GetState() == SURVEY_DONE) {
+            current_mode = MODE_LOITER;
+            gps_hold_active = 0; // Force re-lock at current position
+          }
+        } else {
+          // Survey actively navigating — ensure we're in AUTO mode
+          current_mode = MODE_AUTO;
+          gps_hold_active = 1;
+          target_gps_lat = wp_lat;
+          target_gps_lon = wp_lon;
+        }
       }
 
       // --- USB & ESP32 INCOMING COMMANDS (PID Tuning, Modes, Waypoints) ---
@@ -775,6 +805,47 @@ int main(void) {
         // Format H: H (Heartbeat)
         else if (esp_parse_buffer[0] == 'H') {
           last_dashboard_time = current_time;
+        }
+        // Format S: Survey Mission Commands
+        // S,RESET — Clear waypoint queue
+        // S,WP,lat,lon — Add waypoint to queue
+        // S,START — Begin flying the mission
+        // S,PAUSE — Hold position (LOITER)
+        // S,RESUME — Continue mission
+        // S,ABORT — Stop mission entirely
+        else if (esp_parse_buffer[0] == 'S') {
+          if (strncmp(esp_parse_buffer, "S,RESET", 7) == 0) {
+            Survey_Reset();
+          } else if (strncmp(esp_parse_buffer, "S,WP,", 5) == 0) {
+            char *lat_str = esp_parse_buffer + 5;
+            char *lon_str = strchr(lat_str, ',');
+            if (lon_str) {
+              *lon_str = '\0';
+              lon_str++;
+              float s_lat = atof(lat_str);
+              float s_lon = atof(lon_str);
+              Survey_AddWaypoint(s_lat, s_lon);
+            }
+          } else if (strncmp(esp_parse_buffer, "S,START", 7) == 0) {
+            if (current_state == STATE_ARMED && Survey_GetTotalCount() > 0) {
+              Survey_Start();
+              wp_lat = 0; wp_lon = 0; // Will be set by Survey_Update
+              alt_hold_active = 1;
+              target_altitude = BMP280_GetAltitude();
+              current_mode = MODE_AUTO;
+            }
+          } else if (strncmp(esp_parse_buffer, "S,PAUSE", 7) == 0) {
+            Survey_Pause();
+            current_mode = MODE_LOITER;
+            gps_hold_active = 0; // Force re-lock at current position
+          } else if (strncmp(esp_parse_buffer, "S,RESUME", 8) == 0) {
+            Survey_Resume();
+            current_mode = MODE_AUTO;
+          } else if (strncmp(esp_parse_buffer, "S,ABORT", 7) == 0) {
+            Survey_Abort();
+            current_mode = MODE_LOITER;
+            gps_hold_active = 0;
+          }
         }
 
         esp_parsing = 0; // UNLOCK buffer
@@ -1111,7 +1182,20 @@ int main(void) {
         float heading = Get_Mag_Heading();
         float alt = BMP280_GetAltitude();
 
-        static uint8_t uart_buf[512]; // Increased size and made static to prevent stack overflow
+        // Compute mag averages for survey (resets every telemetry cycle)
+        if (mag_avg_count > 0) {
+          mag_avg_x = (int16_t)(mag_sum_x / mag_avg_count);
+          mag_avg_y = (int16_t)(mag_sum_y / mag_avg_count);
+          mag_avg_z = (int16_t)(mag_sum_z / mag_avg_count);
+        } else {
+          mag_avg_x = mag_x;
+          mag_avg_y = mag_y;
+          mag_avg_z = mag_z;
+        }
+        mag_sum_x = 0; mag_sum_y = 0; mag_sum_z = 0;
+        mag_avg_count = 0;
+
+        static uint8_t uart_buf[640]; // Increased for survey fields
 
         const char *s_r = (roll_actual < 0) ? "-" : "";
         const char *s_p = (pitch_actual < 0) ? "-" : "";
@@ -1120,9 +1204,10 @@ int main(void) {
         const char *s_d = (heading < 0) ? "-" : "";
         const char *s_glat = (gps_lat < 0) ? "-" : "";
         const char *s_glon = (gps_lon < 0) ? "-" : "";
+        const char *s_slat = (gps_lat_smooth < 0) ? "-" : "";
+        const char *s_slon = (gps_lon_smooth < 0) ? "-" : "";
 
-        // Added PID values, raw Mag data, and Battery Voltage to the outgoing
-        // JSON!
+        // Telemetry JSON with survey data appended
         sprintf(
             (char *)uart_buf,
             "{\"v\":%d.%02d,\"r\":%s%d.%d,\"p\":%s%d.%d,\"y\":%s%d.%d,\"a\":%s%"
@@ -1133,7 +1218,11 @@ int main(void) {
             "%02d,%d.%02d],\"pid_y\":[%d.%02d,%d.%02d,%d.%02d,%d.%02d],\"md\":%"
             "d,\"mx\":%d,"
             "\"my\":%d,\"mz\":%d,\"ry\":%d,\"rp\":%d,\"rr\":%d,\"arm\":%d,\"sig\":%d,"
-            "\"m1\":%d,\"m2\":%d,\"m3\":%d,\"m4\":%d}\n",
+            "\"m1\":%d,\"m2\":%d,\"m3\":%d,\"m4\":%d,"
+            "\"gsat\":%d,\"ghdop\":%d.%d,\"gspd\":%d.%d,"
+            "\"slat\":%s%d.%05d,\"slon\":%s%d.%05d,"
+            "\"amx\":%d,\"amy\":%d,\"amz\":%d,"
+            "\"swp\":%d,\"swt\":%d,\"sst\":%d}\n",
             (int)battery_voltage, (int)(battery_voltage * 100) % 100, s_r,
             (int)fabsf(roll_actual), (int)(fabsf(roll_actual) * 10) % 10, s_p,
             (int)fabsf(pitch_actual), (int)(fabsf(pitch_actual) * 10) % 10, s_y,
@@ -1158,7 +1247,16 @@ int main(void) {
             (int)(pid_yaw.Kf * 100) % 100, (int)current_mode, mag_x, mag_y,
             mag_z, nrf_data.yaw, nrf_data.pitch, nrf_data.roll,
             (current_state == STATE_ARMED ? 1 : 0), (int)nrf_sig_strength,
-            (int)motor1, (int)motor2, (int)motor3, (int)motor4);
+            (int)motor1, (int)motor2, (int)motor3, (int)motor4,
+            // --- Survey fields (appended, does not change existing data) ---
+            gps_satellites,
+            (int)gps_hdop, (int)(fabsf(gps_hdop) * 10) % 10,
+            (int)gps_speed, (int)(fabsf(gps_speed) * 10) % 10,
+            s_slat, (int)fabsf(gps_lat_smooth), (int)(fabsf(gps_lat_smooth) * 100000) % 100000,
+            s_slon, (int)fabsf(gps_lon_smooth), (int)(fabsf(gps_lon_smooth) * 100000) % 100000,
+            mag_avg_x, mag_avg_y, mag_avg_z,
+            // --- Auto Survey Mission State ---
+            (int)Survey_GetCurrentIndex(), (int)Survey_GetTotalCount(), (int)Survey_GetState());
 
         // Send to USB (Serial Monitor)
         CDC_Transmit_FS(uart_buf, strlen((char *)uart_buf));

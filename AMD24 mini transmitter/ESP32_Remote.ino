@@ -43,8 +43,8 @@ Data_Package data;
 // Center values for your specific joysticks (adjust these so the screen reads 0
 // when released)
 #define ADC_YAW_MID 13115 // Adjusted based on your 110 offset feedback
-#define ADC_PITCH_MID 10750
-#define ADC_ROLL_MID 10750
+#define ADC_PITCH_MID 13115
+#define ADC_ROLL_MID 13115
 
 unsigned long last_oled_update = 0;
 unsigned long last_tx_time = 0;
@@ -52,16 +52,24 @@ unsigned long last_tx_time = 0;
 // Helper function to map joystick values so the exact middle is 0
 int16_t map_joystick(int16_t val, int16_t min_val, int16_t mid_val,
                      int16_t max_val) {
+  int16_t mapped_val = 0;
   if (val <= mid_val) {
     if (mid_val == min_val)
       return 0;
-    return (int16_t)((((float)(val - min_val) / (mid_val - min_val)) * 500.0f) -
+    mapped_val = (int16_t)((((float)(val - min_val) / (mid_val - min_val)) * 500.0f) -
                      500.0f);
   } else {
     if (max_val == mid_val)
       return 0;
-    return (int16_t)(((float)(val - mid_val) / (max_val - mid_val)) * 500.0f);
+    mapped_val = (int16_t)(((float)(val - mid_val) / (max_val - mid_val)) * 500.0f);
   }
+  
+  // Apply a deadband so it stays exactly at 0 when the joystick is released
+  if (mapped_val > -25 && mapped_val < 25) {
+    return 0;
+  }
+  
+  return mapped_val;
 }
 
 void setup() {
@@ -150,11 +158,13 @@ void loop() {
     data.yaw = map_joystick(raw_yaw, ADC_MIN, ADC_YAW_MID, ADC_MAX);
     data.yaw = constrain(data.yaw, -500, 500);
 
-    // Pitch: hardcoded to 0 since joystick is removed
-    data.pitch = 0;
+    // Pitch: Map to -500 to 500
+    data.pitch = map_joystick(raw_pitch, ADC_MIN, ADC_PITCH_MID, ADC_MAX);
+    data.pitch = constrain(data.pitch, -500, 500);
 
-    // Roll: hardcoded to 0 since joystick is removed
-    data.roll = 0;
+    // Roll: Map to -500 to 500
+    data.roll = map_joystick(raw_roll, ADC_MIN, ADC_ROLL_MID, ADC_MAX);
+    data.roll = constrain(data.roll, -500, 500);
 
     // Send the payload via NRF24
     bool success = radio.write(&data, sizeof(Data_Package));

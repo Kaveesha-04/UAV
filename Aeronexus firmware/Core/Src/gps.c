@@ -10,9 +10,26 @@
 #define EARTH_RADIUS 6371000.0f // meters
 #define DEG_TO_RAD 0.01745329251f
 
+// Flight-critical GPS data (UNTOUCHED by survey improvements)
 float gps_lat = 0.0f;
 float gps_lon = 0.0f;
 uint8_t gps_fix = 0;
+
+// GPS Quality Data (parsed from GGA fields 7 & 8 — always present in NMEA)
+uint8_t gps_satellites = 0;
+float gps_hdop = 99.0f;  // Start high = "no quality info yet"
+
+// Survey-Only EMA Smoothed Coordinates (NEVER used by flight controller)
+float gps_lat_smooth = 0.0f;
+float gps_lon_smooth = 0.0f;
+static uint8_t ema_initialized = 0;
+
+// Ground Speed from RMC sentence (knots → m/s)
+float gps_speed = 0.0f;
+
+// EMA smoothing factor: 0.3 = moderate smoothing (responds in ~3 updates)
+// Lower = smoother but slower to respond, Higher = noisier but faster
+#define GPS_EMA_ALPHA 0.3f
 
 // Convert NMEA DDMM.MMMM to Decimal Degrees
 static float NMEA_to_Decimal(float nmea_coord, char direction) {
@@ -58,7 +75,7 @@ static int validate_nmea_checksum(const char *nmea) {
 }
 
 void GPS_Parse(char *nmea) {
-    // Basic $GPGGA and $GNGGA parser
+    // --- $GPGGA / $GNGGA Parser (Position + Quality) ---
     if (strncmp(nmea, "$GPGGA", 6) == 0 || strncmp(nmea, "$GNGGA", 6) == 0) {
         // 1. MUST Validate Checksum first to avoid parsing phantom coordinates from noisy UART
         if (!validate_nmea_checksum(nmea)) {
@@ -83,6 +100,8 @@ void GPS_Parse(char *nmea) {
                 else if (comma_count == 4 && *p != ',') raw_lon = atof(p);
                 else if (comma_count == 5 && *p != ',') lon_dir = *p;
                 else if (comma_count == 6 && *p != ',') gps_fix = atoi(p);
+                else if (comma_count == 7 && *p != ',') gps_satellites = (uint8_t)atoi(p);
+                else if (comma_count == 8 && *p != ',') gps_hdop = atof(p);
                 
                 continue;
             }
@@ -93,6 +112,42 @@ void GPS_Parse(char *nmea) {
         if (gps_fix > 0 && raw_lat != 0.0f && raw_lon != 0.0f) {
             gps_lat = NMEA_to_Decimal(raw_lat, lat_dir);
             gps_lon = NMEA_to_Decimal(raw_lon, lon_dir);
+
+            // Update EMA-smoothed coordinates for survey use only
+            if (!ema_initialized) {
+                // First valid fix: seed the filter with the raw position
+                gps_lat_smooth = gps_lat;
+                gps_lon_smooth = gps_lon;
+                ema_initialized = 1;
+            } else {
+                gps_lat_smooth = GPS_EMA_ALPHA * gps_lat + (1.0f - GPS_EMA_ALPHA) * gps_lat_smooth;
+                gps_lon_smooth = GPS_EMA_ALPHA * gps_lon + (1.0f - GPS_EMA_ALPHA) * gps_lon_smooth;
+            }
+        }
+    }
+    // --- $GPRMC / $GNRMC Parser (Ground Speed) ---
+    else if (strncmp(nmea, "$GPRMC", 6) == 0 || strncmp(nmea, "$GNRMC", 6) == 0) {
+        if (!validate_nmea_checksum(nmea)) {
+            return;
+        }
+
+        int comma_count = 0;
+        char *p = nmea;
+
+        while (*p) {
+            if (*p == ',') {
+                comma_count++;
+                p++;
+
+                // Field 7 = Speed over ground in knots
+                if (comma_count == 7 && *p != ',') {
+                    float speed_knots = atof(p);
+                    gps_speed = speed_knots * 0.514444f; // Convert knots to m/s
+                }
+
+                continue;
+            }
+            p++;
         }
     }
 }
