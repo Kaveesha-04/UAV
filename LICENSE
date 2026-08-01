@@ -32,6 +32,42 @@ SOFTWARE.
 
 ---
 
+UAV / DRONE SOFTWARE SAFETY DISCLAIMER
+
+This Software is designed to control unmanned aerial vehicles (UAVs / drones),
+which are inherently dangerous devices capable of causing serious injury,
+death, or property damage if operated improperly or if the software
+malfunctions.
+
+1. NO FLIGHT SAFETY CERTIFICATION: This Software has NOT been tested,
+   certified, or approved by any aviation authority or safety standards body
+   (including but not limited to FAA, EASA, ICAO, or equivalent). It is NOT
+   intended for use in any safety-critical or life-critical application.
+
+2. USE AT YOUR OWN RISK: By using this Software, you acknowledge and accept
+   full responsibility for any and all consequences arising from its use,
+   including but not limited to:
+   - Uncontrolled flight or loss of control of the aircraft
+   - Crashes, collisions, or fly-away events
+   - Physical injury or death to persons
+   - Damage to property, infrastructure, or other aircraft
+   - Interference with manned aviation or emergency services
+
+3. REGULATORY COMPLIANCE: You are solely responsible for complying with all
+   applicable local, national, and international laws, regulations, and
+   guidelines governing the operation of unmanned aerial vehicles in your
+   jurisdiction. This includes but is not limited to airspace restrictions,
+   registration requirements, pilot certification, and operational limits.
+
+4. NO LIABILITY FOR HARDWARE DAMAGE: The author assumes no responsibility for
+   damage to electronic components, motors, batteries, or any other hardware
+   resulting from the use of this Software, including damage caused by
+   incorrect wiring, configuration errors, or software bugs.
+
+5. TESTING REQUIRED: Users must thoroughly test all software configurations,
+   PID parameters, failsafe mechanisms, and flight behavior in a safe,
+   controlled environment (with propellers removed) before any flight attempt.
+
 THIRD-PARTY NOTICES
 
 This project includes the following third-party components, each under their
