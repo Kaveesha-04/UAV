@@ -503,8 +503,8 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
 
     __HAL_RCC_GPIOD_CLK_ENABLE();
     /**USART3 GPIO Configuration
-    PD8     ------> USART3_TX
-    PD9     ------> USART3_RX
+    PD9     ------> USART3_TX
+    PD2     ------> USART3_RX
     */
     GPIO_InitStruct.Pin = GPS_TX_Pin|GPS_RX_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
@@ -578,8 +578,8 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* huart)
     __HAL_RCC_USART3_CLK_DISABLE();
 
     /**USART3 GPIO Configuration
-    PD8     ------> USART3_TX
-    PD9     ------> USART3_RX
+    PD9     ------> USART3_TX
+    PD2     ------> USART3_RX
     */
     HAL_GPIO_DeInit(GPIOD, GPS_TX_Pin|GPS_RX_Pin);
 

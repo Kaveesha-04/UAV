@@ -263,7 +263,7 @@ void I2C1_Recover(void) {
   __HAL_RCC_GPIOB_CLK_ENABLE();
   GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7; // PB6 = SCL, PB7 = SDA
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP; // Changed to PULLUP in case external resistors are missing
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
@@ -398,6 +398,9 @@ int main(void) {
 
   // Calibrate MPU6500 (Ensure drone is stationary)
   MPU6500_Calibrate(&hspi2);
+
+  // Unbrick the I2C bus before scanning in case the magnetometer is stuck holding SDA low
+  I2C1_Recover();
 
   // Full I2C Scanner to definitively find the Magnetometer
   for (uint8_t i = 1; i < 128; i++) {

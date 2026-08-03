@@ -96,11 +96,11 @@ UAV Template/
 
 | Peripheral | Pins | Connected Device | Config |
 |-----------|------|------------------|--------|
-| SPI1 | PA5(SCK)/PA6(MISO)/PA7(MOSI) + PA4(CSN) + PB0(CE) | NRF24L01+ Radio | 250kbps, Ch76 |
-| SPI2 | PB13(SCK)/PB14(MISO)/PB15(MOSI) + PB12(CS_MPU) + PB11(CS_BMP) | MPU6500 IMU + BMP280 Baro | 500dps, 8G / Filter 16 |
+| SPI1 | PA5(SCK)/PA6(MISO)/PA7(MOSI) + PA4(CSN) + PC4(CE) | NRF24L01+ Radio | 250kbps, Ch76 |
+| SPI2 | PB10(SCK)/PC2(MISO)/PC1(MOSI) + PB12(CS_MPU) + PB11(CS_BMP) | MPU6500 IMU + BMP280 Baro | 500dps, 8G / Filter 16 |
 | I2C1 | PB6(SCL)/PB7(SDA) | QMC5883L/HMC5883L/QMC5883P Mag | Auto-detected |
 | UART2 | PA2(TX)/PA3(RX) | ESP32 Telemetry Bridge | 115200 baud |
-| UART3 | PD8(TX)/PD9(RX) | GPS Module (NMEA) | 115200 baud |
+| UART3 | PD9(TX)/PD2(RX) | GPS Module (NMEA) | 115200 baud |
 | USB FS | — | CDC Virtual COM Port | Telemetry + Commands |
 | TIM3 | CH1(PC6)/CH2(PC7)/CH3(PC8)/CH4(PB1) | ESC Motor PWM | 1100-2000µs |
 | TIM4 | — | 250Hz PID loop ISR | Sets `pid_loop_flag` |
@@ -115,7 +115,7 @@ UAV Template/
 #define BTN_K2_Pin       GPIO_PIN_4   // PE4 — Secondary button
 #define LED_STATUS_Pin   GPIO_PIN_1   // PA1 — Status LED
 #define NRF_CSN_Pin      GPIO_PIN_4   // PA4 — NRF24 chip select
-#define NRF_CE_Pin       GPIO_PIN_0   // PB0 — NRF24 chip enable
+#define NRF_CE_Pin       GPIO_PIN_4   // PC4 — NRF24 chip enable
 #define BMP_CS_Pin       GPIO_PIN_11  // PB11 — BMP280 chip select
 #define MPU_CS_Pin       GPIO_PIN_12  // PB12 — MPU6500 chip select
 #define CH1_M_BL_Pin     GPIO_PIN_6   // PC6 — Motor 1 (Rear Left)

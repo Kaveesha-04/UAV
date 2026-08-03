@@ -82,11 +82,11 @@
 
 | Peripheral | Pins | Connected Device | Configuration |
 |-----------|------|------------------|---------------|
-| SPI1 | PA5/PA6/PA7 + PA4(CSN) + PB0(CE) | NRF24L01+ Radio | 250 kbps, Ch 76 |
-| SPI2 | PB13/PB14/PB15 + PB12(CS) + PB11(CS) | MPU6500 + BMP280 | 500°/s, 8G |
+| SPI1 | PA5/PA6/PA7 + PA4(CSN) + PC4(CE) | NRF24L01+ Radio | 250 kbps, Ch 76 |
+| SPI2 | PB10/PC2/PC1 + PB12(CS) + PB11(CS) | MPU6500 + BMP280 | 500°/s, 8G |
 | I2C1 | PB6(SCL) / PB7(SDA) | QMC5883L / HMC5883L Magnetometer | Auto-detected |
 | UART2 | PA2(TX) / PA3(RX) | ESP32 Telemetry Bridge | 115200 baud |
-| UART3 | PD8(TX) / PD9(RX) | GPS Module (NMEA) | 115200 baud |
+| UART3 | PD9(TX) / PD2(RX) | GPS Module (NMEA) | 115200 baud |
 | USB FS | — | CDC Virtual COM Port | Telemetry + Commands |
 | TIM3 | CH1–CH4 (PC6/PC7/PC8/PB1) | ESC Motor PWM | 1100–2000 µs |
 | TIM4 | — | 250 Hz PID Loop ISR | Sets `pid_loop_flag` |
