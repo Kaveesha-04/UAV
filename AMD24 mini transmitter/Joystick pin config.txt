@@ -1,0 +1,4 @@
+ - Joy1 Y - Trottle (ADC - A1)
+ - Joy1 X - Yaw (ADC - A0)
+ - Joy2 Y - Pich (ADC - A3)
+ - Joy2 X - Roll (ADC - A2)
