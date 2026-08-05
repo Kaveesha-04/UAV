@@ -56,19 +56,21 @@ int16_t map_joystick(int16_t val, int16_t min_val, int16_t mid_val,
   if (val <= mid_val) {
     if (mid_val == min_val)
       return 0;
-    mapped_val = (int16_t)((((float)(val - min_val) / (mid_val - min_val)) * 500.0f) -
-                     500.0f);
+    mapped_val =
+        (int16_t)((((float)(val - min_val) / (mid_val - min_val)) * 500.0f) -
+                  500.0f);
   } else {
     if (max_val == mid_val)
       return 0;
-    mapped_val = (int16_t)(((float)(val - mid_val) / (max_val - mid_val)) * 500.0f);
+    mapped_val =
+        (int16_t)(((float)(val - mid_val) / (max_val - mid_val)) * 500.0f);
   }
-  
+
   // Apply a deadband so it stays exactly at 0 when the joystick is released
   if (mapped_val > -25 && mapped_val < 25) {
     return 0;
   }
-  
+
   return mapped_val;
 }
 
@@ -126,7 +128,7 @@ void setup() {
   radio.setPALevel(
       RF24_PA_MAX); // Max power for best range (ensure good 3.3V supply!)
   radio.setDataRate(
-      RF24_250KBPS); // 250kbps gives significantly better range than 2Mbps
+      RF24_250KBPS);    // 250kbps gives significantly better range than 2Mbps
   radio.setChannel(76); // Reverted to 76 (default) to match working config
   radio.setPayloadSize(
       sizeof(Data_Package)); // FORCE 8-byte payload to match STM32!
@@ -146,7 +148,7 @@ void loop() {
     int16_t raw_yaw = ads.readADC_SingleEnded(0);      // Vrx - A0
     int16_t raw_throttle = ads.readADC_SingleEnded(1); // Vry - A1
     int16_t raw_pitch = ads.readADC_SingleEnded(3);    // Vry - A3
-    int16_t raw_roll = ads.readADC_SingleEnded(2);     // Vrx - A2  
+    int16_t raw_roll = ads.readADC_SingleEnded(2);     // Vrx - A2
 
     // Map the raw ADC values to the formats expected by the STM32 Firmware
 
@@ -155,15 +157,15 @@ void loop() {
     data.throttle = constrain(data.throttle, 1000, 2000);
 
     // Yaw: Map to -500 to 500
-    data.yaw = map_joystick(raw_yaw, ADC_MIN, ADC_YAW_MID, ADC_MAX);
+    data.yaw = -map_joystick(raw_yaw, ADC_MIN, ADC_YAW_MID, ADC_MAX);
     data.yaw = constrain(data.yaw, -500, 500);
 
     // Pitch: Map to -500 to 500
-    data.pitch = map_joystick(raw_pitch, ADC_MIN, ADC_PITCH_MID, ADC_MAX);
+    data.pitch = -map_joystick(raw_pitch, ADC_MIN, ADC_PITCH_MID, ADC_MAX);
     data.pitch = constrain(data.pitch, -500, 500);
 
     // Roll: Map to -500 to 500
-    data.roll = - map_joystick(raw_roll, ADC_MIN, ADC_ROLL_MID, ADC_MAX);
+    data.roll = map_joystick(raw_roll, ADC_MIN, ADC_ROLL_MID, ADC_MAX);
     data.roll = constrain(data.roll, -500, 500);
 
     // Send the payload via NRF24
@@ -192,10 +194,10 @@ void loop() {
       display.printf("THR: %-4d", data.throttle);
 
       display.setCursor(0, 34);
-      display.printf("YAW: %-4d  PIT: %-4d", data.yaw, data.pitch);
+      display.printf("YAW: %-4d  PIT: %-4d", -data.yaw, -data.pitch);
 
       display.setCursor(0, 46);
-      display.printf("ROL: %-4d", data.roll);
+      display.printf("ROL: %-4d", -data.roll);
 
       display.setCursor(0, 56);
       if (success) {

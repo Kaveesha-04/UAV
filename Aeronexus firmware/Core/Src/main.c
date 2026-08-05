@@ -134,6 +134,9 @@ float Get_Mag_Heading(void) {
   // -1° 56' = -1.9333 degrees
   float declination = -1.9333f * (M_PI / 180.0f);
   heading_rad += declination;
+  
+  // Apply a -45 degree hardware offset correction as requested
+  heading_rad -= 45.0f * (M_PI / 180.0f);
 
   if (heading_rad < 0)
     heading_rad += 2 * M_PI;
