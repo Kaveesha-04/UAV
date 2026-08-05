@@ -248,14 +248,19 @@ function sendCommandToDrone(droneId, cmd) {
         return false;
     }
 
-    if (entry.connectionType === 'USB' && entry.serialPort) {
-        console.log(`[USB] Sending to "${droneId}":`, cmd.trim());
-        entry.serialPort.write(cmd);
-        return true;
-    } else if (entry.socket) {
-        console.log(`[WIFI] Sending to "${droneId}":`, cmd.trim());
-        entry.socket.write(cmd);
-        return true;
+    try {
+        if (entry.connectionType === 'USB' && entry.serialPort) {
+            console.log(`[USB] Sending to "${droneId}":`, cmd.trim());
+            entry.serialPort.write(cmd);
+            return true;
+        } else if (entry.socket) {
+            console.log(`[WIFI] Sending to "${droneId}":`, cmd.trim());
+            entry.socket.write(cmd);
+            return true;
+        }
+    } catch (err) {
+        console.log(`[ERROR] Failed to write to drone "${droneId}":`, err.message);
+        return false;
     }
 
     console.log(`[ERROR] No active connection for drone "${droneId}"`);
@@ -377,6 +382,12 @@ io.on('connection', (wsSocket) => {
     });
 
     wsSocket.on('fleet:auto_assign', (data) => {
+        // Ensure user is authenticated as Fleet Admin
+        if (!data.fleetToken || !fleetTokens.has(data.fleetToken)) {
+            wsSocket.emit('fleet:error', { message: 'Unauthorized. Please login to Fleet Command.' });
+            return;
+        }
+
         // Auto-assign all pending connections with sequential names
         const prefix = data.prefix || 'Drone';
         let counter = droneRegistry.size + 1;
@@ -406,14 +417,14 @@ io.on('connection', (wsSocket) => {
 
     // --- DRONE-SPECIFIC COMMANDS ---
 
-    wsSocket.on('drone:command', (data) => {
-        const { droneId, type, payload, droneToken } = data;
+    wsSocket.on('drone:command', (data = {}) => {
+        const { droneId, type, payload = {}, droneToken } = data;
         if (!droneId) return;
 
         // Skip auth for heartbeat to keep connection alive silently
         if (type !== 'heartbeat') {
             const hasDroneAccess = droneToken && droneTokens.get(droneToken) === droneId;
-            const hasFleetAccess = fleetToken && fleetTokens.has(fleetToken);
+            const hasFleetAccess = data.fleetToken && fleetTokens.has(data.fleetToken);
             if (!hasDroneAccess && !hasFleetAccess) {
                 // Not authenticated for this drone
                 console.log(`[AUTH] Unauthorized command attempt to ${droneId}`);
@@ -481,22 +492,22 @@ io.on('connection', (wsSocket) => {
         return null;
     }
 
-    wsSocket.on('tune_pid', (data) => {
+    wsSocket.on('tune_pid', (data = {}) => {
         const droneId = getLegacyDrone();
         if (!droneId) return;
-        let p_int = Math.round(data.p * 100);
-        let i_int = Math.round(data.i * 100);
-        let d_int = Math.round(data.d * 100);
-        let f_int = Math.round(data.f * 100);
-        sendCommandToDrone(droneId, `P,${data.axis},${p_int},${i_int},${d_int},${f_int}\n`);
+        let p_int = Math.round((data.p || 0) * 100);
+        let i_int = Math.round((data.i || 0) * 100);
+        let d_int = Math.round((data.d || 0) * 100);
+        let f_int = Math.round((data.f || 0) * 100);
+        sendCommandToDrone(droneId, `P,${data.axis || 'roll'},${p_int},${i_int},${d_int},${f_int}\n`);
     });
 
-    wsSocket.on('send_waypoint', (data) => {
+    wsSocket.on('send_waypoint', (data = {}) => {
         const droneId = getLegacyDrone();
         if (droneId) sendCommandToDrone(droneId, `W,${data.lat},${data.lon}\n`);
     });
 
-    wsSocket.on('set_mode', (data) => {
+    wsSocket.on('set_mode', (data = {}) => {
         const droneId = getLegacyDrone();
         if (droneId) sendCommandToDrone(droneId, `M,${data.mode}\n`);
     });
@@ -506,12 +517,12 @@ io.on('connection', (wsSocket) => {
         if (droneId) sendCommandToDrone(droneId, `B\n`);
     });
 
-    wsSocket.on('toggle_arm', (data) => {
+    wsSocket.on('toggle_arm', (data = {}) => {
         const droneId = getLegacyDrone();
         if (droneId) sendCommandToDrone(droneId, `A,${data.arm}\n`);
     });
 
-    wsSocket.on('calibrate_mag', (data) => {
+    wsSocket.on('calibrate_mag', (data = {}) => {
         const droneId = getLegacyDrone();
         if (droneId) sendCommandToDrone(droneId, `C,${data.x},${data.y},${data.z}\n`);
     });
@@ -526,7 +537,7 @@ io.on('connection', (wsSocket) => {
         if (droneId) sendCommandToDrone(droneId, `S,RESET\n`);
     });
 
-    wsSocket.on('survey_waypoint', (data) => {
+    wsSocket.on('survey_waypoint', (data = {}) => {
         const droneId = getLegacyDrone();
         if (droneId) sendCommandToDrone(droneId, `S,WP,${data.lat},${data.lon}\n`);
     });

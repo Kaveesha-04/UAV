@@ -510,8 +510,9 @@ int main(void) {
         // ESP32 sends -500 for Roll Right. We need +500 for Right.
         nrf_data.roll = -nrf_data.roll;
         
-        // ESP32 sends +500 for Yaw Right. We need -500 for Yaw Right (CW torque).
-        nrf_data.yaw = -nrf_data.yaw;
+        // ESP32 sends +500 for Yaw Right. We want positive values to increase the heading (CW rotation).
+        // Do not invert yaw!
+        // nrf_data.yaw = -nrf_data.yaw;
         // ----------------------------------------------------------------------------
 
         last_radio_time = current_time;

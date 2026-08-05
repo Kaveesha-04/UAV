@@ -354,6 +354,8 @@ let pidInitialized = false;
 // TELEMETRY HANDLER — Works in both fleet & legacy mode
 // =============================================
 
+window.lastChartRenderTime = 0;
+
 function handleTelemetry(data) {
     // Update 3D Attitude
     if (data.r !== undefined || data.p !== undefined || data.y !== undefined) {
@@ -594,7 +596,7 @@ if (IS_FLEET_MODE) {
     socket.on('telemetry', handleTelemetry);
 }
 
-window.lastChartRenderTime = 0;
+
 
 // PID Saving Function
 function savePID(axis, btn) {

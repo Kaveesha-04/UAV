@@ -958,20 +958,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initFleetMap();
     globalAnimationLoop();
 
-    // Add Logout Button
-    const topBar = document.querySelector('.top-bar .logo');
-    if (topBar) {
-        const logoutBtn = document.createElement('button');
-        logoutBtn.className = 'view-btn';
-        logoutBtn.style.marginLeft = '20px';
-        logoutBtn.innerHTML = 'LOGOUT';
-        logoutBtn.onclick = () => {
-            localStorage.removeItem('fleetToken');
-            window.location.href = '/login.html';
-        };
-        topBar.appendChild(logoutBtn);
-    }
-
     // Fix Leaflet rendering
     setTimeout(() => {
         if (fleetMap) fleetMap.invalidateSize();

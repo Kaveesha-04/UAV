@@ -156,8 +156,9 @@ void MPU6500_Read_Angles(SPI_HandleTypeDef *hspi, float dt) {
         if (yaw_error > 180.0f) yaw_error -= 360.0f;
         else if (yaw_error < -180.0f) yaw_error += 360.0f;
         
-        // Apply correction (98% Gyro, 2% Mag)
-        Yaw += (-Filtered_Gyro_Z * dt) + (0.02f * yaw_error);
+        // Apply correction (99.9% Gyro, 0.1% Mag)
+        // 0.001f per tick at 250Hz is much more stable against motor magnetic interference
+        Yaw += (-Filtered_Gyro_Z * dt) + (0.001f * yaw_error);
     } else {
         // No magnetometer: Just integrate Gyro Z (will slowly drift)
         Yaw += (-Filtered_Gyro_Z * dt);
