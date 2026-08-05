@@ -143,10 +143,10 @@ void loop() {
     last_tx_time = current_time;
 
     // Read raw 16-bit values from the ADS1115 ADC
-    int16_t raw_yaw = ads.readADC_SingleEnded(0);      // Vrx - A2
+    int16_t raw_yaw = ads.readADC_SingleEnded(0);      // Vrx - A0
     int16_t raw_throttle = ads.readADC_SingleEnded(1); // Vry - A1
-    int16_t raw_pitch = ads.readADC_SingleEnded(3);    // Vry - A1
-    int16_t raw_roll = ads.readADC_SingleEnded(2);     // Vrx - A3  
+    int16_t raw_pitch = ads.readADC_SingleEnded(3);    // Vry - A3
+    int16_t raw_roll = ads.readADC_SingleEnded(2);     // Vrx - A2  
 
     // Map the raw ADC values to the formats expected by the STM32 Firmware
 
