@@ -539,11 +539,13 @@ function calculateSurveyArea(points) {
     pts.sort((a, b) => a.y - b.y || a.x - b.x);
     let pivot = pts[0];
     
-    pts.slice(1).sort((a, b) => {
+    let rest = pts.slice(1);
+    rest.sort((a, b) => {
         let angleA = Math.atan2(a.y - pivot.y, a.x - pivot.x);
         let angleB = Math.atan2(b.y - pivot.y, b.x - pivot.x);
         return angleA - angleB;
     });
+    pts = [pivot, ...rest];
     
     let area = 0;
     let n = pts.length;

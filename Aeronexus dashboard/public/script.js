@@ -1,5 +1,5 @@
 if (window.location.protocol === 'file:') {
-    alert("CRITICAL ERROR: Please start the server by running 'npm start' in the Telemetry_Web_App folder.");
+    alert("CRITICAL ERROR: Please start the server by running 'npm start' in the 'Aeronexus dashboard' folder.");
 }
 
 // =============================================

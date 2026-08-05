@@ -389,6 +389,7 @@ io.on('connection', (wsSocket) => {
             }
 
             const pending = pendingConnections.shift();
+            dronePins.set(name, data.pin || '0000');
             droneRegistry.set(name, {
                 socket: pending.socket,
                 lastTelemetry: pending.previewData,
@@ -411,7 +412,9 @@ io.on('connection', (wsSocket) => {
 
         // Skip auth for heartbeat to keep connection alive silently
         if (type !== 'heartbeat') {
-            if (!droneToken || droneTokens.get(droneToken) !== droneId) {
+            const hasDroneAccess = droneToken && droneTokens.get(droneToken) === droneId;
+            const hasFleetAccess = fleetToken && fleetTokens.has(fleetToken);
+            if (!hasDroneAccess && !hasFleetAccess) {
                 // Not authenticated for this drone
                 console.log(`[AUTH] Unauthorized command attempt to ${droneId}`);
                 wsSocket.emit('drone:auth_error', { droneId, message: 'Unauthorized. Please login to this drone.' });

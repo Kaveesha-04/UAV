@@ -482,12 +482,8 @@ int main(void) {
       }
 
       // 1. Read Battery Voltage Early
-      uint16_t adc_val = BareMetal_ADC1_Read();
-      // Calculate voltage (Assuming 16-bit ADC, 3.3V Ref, and 4:1 Voltage
-      // Divider using four 1kOhm resistors: 3k High, 1k Low)
-      float battery_voltage = ((float)adc_val / 65535.0f) * 3.3f * 4.0f;
-      if (adc_val == 0)
-        battery_voltage = 12.6f; // Fallback if ADC times out
+      (void)BareMetal_ADC1_Read(); // Perform read but discard value to fix unused warning
+      float battery_voltage = 13.2f; // Hardcoded voltage as requested
 
       // 2. Read sensor data
       MPU6500_Read_Angles(&hspi2, dt);
@@ -501,6 +497,20 @@ int main(void) {
       if (NRF_DataAvailable()) {
         sig_pkt_count++;
         NRF_ReadPayload(&nrf_data, sizeof(nrf_data));
+        
+        // --- HARDWARE ADAPTATION (Invert ESP32 mappings to match firmware mixing) ---
+        // ESP32 correctly sends 1000 at bottom, 2000 at top. Do not invert throttle!
+        
+        // ESP32 sends -500 for Pitch Up (Forward). We need +500 for Pitch Up.
+        nrf_data.pitch = -nrf_data.pitch;
+        
+        // ESP32 sends -500 for Roll Right. We need +500 for Right.
+        nrf_data.roll = -nrf_data.roll;
+        
+        // ESP32 sends +500 for Yaw Right. We need -500 for Yaw Right (CW torque).
+        nrf_data.yaw = -nrf_data.yaw;
+        // ----------------------------------------------------------------------------
+
         last_radio_time = current_time;
 
         // Remote sends natively mapped values from -500 to 500
@@ -734,8 +744,8 @@ int main(void) {
           int arm_val;
           if (sscanf(esp_parse_buffer, "A,%d", &arm_val) == 1) {
             if (arm_val == 1) {
-              // Only allow arming from dashboard if physical throttle is zero!
-              if (base_throttle <= 1120.0f) {
+              // Only allow arming from dashboard if disarmed and physical throttle is zero!
+              if ((current_state == STATE_DISARMED || current_state == STATE_FAILSAFE) && base_throttle <= 1120.0f) {
                 current_state = STATE_ARMED;
                 setpoint_yaw = yaw_actual;
                 home_lat = gps_lat;
@@ -890,10 +900,10 @@ int main(void) {
       // --- STICK ARMING LOGIC (And Hardware Button Backup) ---
       static uint32_t stick_cmd_timer = 0;
       if (base_throttle <= 1120.0f) { // Adjusted for ESP32 min throttle of 1100
-        // Betaflight-style stick commands:
-        // Arm: Throttle down, Yaw Right (> 400)
-        // Disarm: Throttle down, Yaw Left (< -400)
-        if (nrf_data.yaw > 400) {
+        // Betaflight-style stick commands (Updated for inverted Yaw):
+        // Arm: Throttle down, Yaw Right (< -400)
+        // Disarm: Throttle down, Yaw Left (> 400)
+        if (nrf_data.yaw < -400) {
           if (stick_cmd_timer == 0) {
             stick_cmd_timer = current_time;
           } else if (current_time - stick_cmd_timer > 1000) { // Hold for 1 second
@@ -904,7 +914,7 @@ int main(void) {
               home_lon = gps_lon;
             }
           }
-        } else if (nrf_data.yaw < -400) {
+        } else if (nrf_data.yaw > 400) {
           if (stick_cmd_timer == 0) {
             stick_cmd_timer = current_time;
           } else if (current_time - stick_cmd_timer > 1000) { // Hold for 1 second

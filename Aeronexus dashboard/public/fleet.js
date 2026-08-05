@@ -891,12 +891,12 @@ function removeDrone(droneId) {
 
 function quickArm(droneId) {
     if (confirm(`⚠️ ARM drone "${droneId}"? Propellers may spin!`)) {
-        socket.emit('drone:command', { droneId, type: 'toggle_arm', payload: { arm: 1 } });
+        socket.emit('drone:command', { droneId, type: 'toggle_arm', payload: { arm: 1 }, fleetToken: fleetToken });
     }
 }
 
 function quickDisarm(droneId) {
-    socket.emit('drone:command', { droneId, type: 'toggle_arm', payload: { arm: 0 } });
+    socket.emit('drone:command', { droneId, type: 'toggle_arm', payload: { arm: 0 }, fleetToken: fleetToken });
 }
 
 function setView(mode) {
