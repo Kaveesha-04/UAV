@@ -146,7 +146,7 @@ void loop() {
     int16_t raw_yaw = ads.readADC_SingleEnded(0);      // Vrx - A0
     int16_t raw_throttle = ads.readADC_SingleEnded(1); // Vry - A1
     int16_t raw_pitch = ads.readADC_SingleEnded(2);    // Vry - A2
-    int16_t raw_roll = ads.readADC_SingleEnded(3);     // Vrx - A3
+    int16_t raw_roll = ads.readADC_SingleEnded(3);     // Vrx - A3  
 
     // Map the raw ADC values to the formats expected by the STM32 Firmware
 
