@@ -143,15 +143,15 @@ void loop() {
     last_tx_time = current_time;
 
     // Read raw 16-bit values from the ADS1115 ADC
-    int16_t raw_yaw = ads.readADC_SingleEnded(0);      // Vrx - A0
+    int16_t raw_yaw = ads.readADC_SingleEnded(0);      // Vrx - A2
     int16_t raw_throttle = ads.readADC_SingleEnded(1); // Vry - A1
-    int16_t raw_pitch = ads.readADC_SingleEnded(2);    // Vry - A2
-    int16_t raw_roll = ads.readADC_SingleEnded(3);     // Vrx - A3  
+    int16_t raw_pitch = ads.readADC_SingleEnded(3);    // Vry - A1
+    int16_t raw_roll = ads.readADC_SingleEnded(2);     // Vrx - A3  
 
     // Map the raw ADC values to the formats expected by the STM32 Firmware
 
     // Throttle: 1000 to 2000
-    data.throttle = map(raw_throttle, ADC_MIN, ADC_MAX, 1000, 2000);
+    data.throttle = map(raw_throttle, ADC_MIN, ADC_MAX, 2000, 1000);
     data.throttle = constrain(data.throttle, 1000, 2000);
 
     // Yaw: Map to -500 to 500
@@ -163,7 +163,7 @@ void loop() {
     data.pitch = constrain(data.pitch, -500, 500);
 
     // Roll: Map to -500 to 500
-    data.roll = map_joystick(raw_roll, ADC_MIN, ADC_ROLL_MID, ADC_MAX);
+    data.roll = - map_joystick(raw_roll, ADC_MIN, ADC_ROLL_MID, ADC_MAX);
     data.roll = constrain(data.roll, -500, 500);
 
     // Send the payload via NRF24
