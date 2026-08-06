@@ -98,6 +98,7 @@ volatile uint8_t usb_string_ready = 0;
 uint8_t mag_type = 0; // 0 = None, 0x0D = QMC5883L, 0x1E = HMC5883L, 0x2C = QMC5883P
 int16_t mag_x = 0, mag_y = 0, mag_z = 0;
 float mag_offset_x = 0.0f, mag_offset_y = 0.0f, mag_offset_z = 0.0f;
+float current_declination = 0.0f;
 
 // Survey-Only Magnetometer Averaging (does NOT affect flight heading)
 // Accumulates readings over the 50-tick telemetry window for noise reduction
@@ -116,7 +117,7 @@ float Get_Mag_Heading(void) {
 
   // Get current attitude for tilt compensation
   float roll = MPU6500_GetRoll() * (M_PI / 180.0f);
-  float pitch = MPU6500_GetPitch() * (M_PI / 180.0f);
+  float pitch = -MPU6500_GetPitch() * (M_PI / 180.0f); // MUST be negated to match reversed IMU frame
 
   // Pre-compute trig functions
   float cos_r = cosf(roll);
@@ -130,9 +131,8 @@ float Get_Mag_Heading(void) {
 
   float heading_rad = atan2f(Y_h, X_h);
 
-  // Magnetic Declination for Katubedda (-1 degree 56 minutes)
-  // -1° 56' = -1.9333 degrees
-  float declination = -1.9333f * (M_PI / 180.0f);
+  // Magnetic Declination
+  float declination = current_declination * (M_PI / 180.0f);
   heading_rad += declination;
   
   // Apply a -45 degree hardware offset correction as requested
@@ -453,10 +453,11 @@ int main(void) {
     pid_yaw.Kd = flash_mem.y_d;
     pid_yaw.Kf = flash_mem.y_f;
 
-    // Apply saved Magnetometer offsets
+    // Apply saved Magnetometer offsets and declination
     mag_offset_x = flash_mem.mag_offset_x;
     mag_offset_y = flash_mem.mag_offset_y;
     mag_offset_z = flash_mem.mag_offset_z;
+    current_declination = flash_mem.mag_declination;
   }
 
   current_state = STATE_DISARMED; // Boot sequence finished, drone is safe
@@ -598,7 +599,7 @@ int main(void) {
               alt_hold_active = 1;
               target_altitude = alt_actual;
             }
-            if (!gps_hold_active || target_gps_lat != home_lat) {
+            if (!gps_hold_active || fabsf(target_gps_lat - home_lat) > 0.00001f) {
               gps_hold_active = 1;
               target_gps_lat = home_lat;
               target_gps_lon = home_lon;
@@ -610,7 +611,7 @@ int main(void) {
               alt_hold_active = 1;
               target_altitude = alt_actual;
             }
-            if (!gps_hold_active || target_gps_lat != wp_lat) {
+            if (!gps_hold_active || fabsf(target_gps_lat - wp_lat) > 0.00001f) {
               gps_hold_active = 1;
               target_gps_lat = wp_lat;
               target_gps_lon = wp_lon;
@@ -781,12 +782,26 @@ int main(void) {
             fd.mag_offset_x = mag_offset_x;
             fd.mag_offset_y = mag_offset_y;
             fd.mag_offset_z = mag_offset_z;
+            fd.mag_declination = current_declination;
             Flash_Save(&fd);
           }
         }
-        // Format C: C,mag_x,mag_y,mag_z (Update Offsets)
+        // Format C: C,mag_x,mag_y,mag_z (Update Offsets) or C,DECL,val (Update Declination)
         else if (esp_parse_buffer[0] == 'C') {
-          char *token = strtok((char *)esp_parse_buffer, ",");
+          if (strncmp(esp_parse_buffer, "C,DECL,", 7) == 0) {
+            char *val_str = esp_parse_buffer + 7;
+            current_declination = atof(val_str);
+            if (current_state == STATE_DISARMED) {
+                Flash_Data fd;
+                fd.r_p = pid_roll.Kp; fd.r_i = pid_roll.Ki; fd.r_d = pid_roll.Kd; fd.r_f = pid_roll.Kf;
+                fd.p_p = pid_pitch.Kp; fd.p_i = pid_pitch.Ki; fd.p_d = pid_pitch.Kd; fd.p_f = pid_pitch.Kf;
+                fd.y_p = pid_yaw.Kp; fd.y_i = pid_yaw.Ki; fd.y_d = pid_yaw.Kd; fd.y_f = pid_yaw.Kf;
+                fd.mag_offset_x = mag_offset_x; fd.mag_offset_y = mag_offset_y; fd.mag_offset_z = mag_offset_z;
+                fd.mag_declination = current_declination;
+                Flash_Save(&fd);
+            }
+          } else {
+            char *token = strtok((char *)esp_parse_buffer, ",");
           if (token != NULL && token[0] == 'C') {
             char *ox_str = strtok(NULL, ",");
             char *oy_str = strtok(NULL, ",");
@@ -814,10 +829,12 @@ int main(void) {
                 fd.mag_offset_x = mag_offset_x;
                 fd.mag_offset_y = mag_offset_y;
                 fd.mag_offset_z = mag_offset_z;
+                fd.mag_declination = current_declination;
                 Flash_Save(&fd);
               }
             }
           }
+        }
         }
         // Format H: H (Heartbeat)
         else if (esp_parse_buffer[0] == 'H') {
@@ -904,10 +921,10 @@ int main(void) {
       // --- STICK ARMING LOGIC (And Hardware Button Backup) ---
       static uint32_t stick_cmd_timer = 0;
       if (base_throttle <= 1120.0f) { // Adjusted for ESP32 min throttle of 1100
-        // Betaflight-style stick commands (Updated for inverted Yaw):
-        // Arm: Throttle down, Yaw Right (< -400)
-        // Disarm: Throttle down, Yaw Left (> 400)
-        if (nrf_data.yaw < -400) {
+        // Betaflight-style stick commands:
+        // Arm: Throttle down, Yaw Right (> 400)
+        // Disarm: Throttle down, Yaw Left (< -400)
+        if (nrf_data.yaw > 400) {
           if (stick_cmd_timer == 0) {
             stick_cmd_timer = current_time;
           } else if (current_time - stick_cmd_timer > 1000) { // Hold for 1 second
@@ -918,7 +935,7 @@ int main(void) {
               home_lon = gps_lon;
             }
           }
-        } else if (nrf_data.yaw > 400) {
+        } else if (nrf_data.yaw < -400) {
           if (stick_cmd_timer == 0) {
             stick_cmd_timer = current_time;
           } else if (current_time - stick_cmd_timer > 1000) { // Hold for 1 second
@@ -1191,10 +1208,10 @@ int main(void) {
                       motor4); // CRITICAL: Actually send the off signal!
       }
 
-      // 6. Debug Printing via USB & ESP32 (Every 200ms / 5Hz)
+      // 6. Debug Printing via USB & ESP32 (Every 40ms / 25Hz)
       static uint8_t print_counter = 0;
       print_counter++;
-      if (print_counter >= 50) {
+      if (print_counter >= 10) {
         print_counter = 0;
         float heading = Get_Mag_Heading();
         float alt = BMP280_GetAltitude();

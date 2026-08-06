@@ -324,6 +324,16 @@ function calibrateMag() {
     }
 }
 
+function setDeclination() {
+    const input = document.getElementById('input-declination');
+    const val = parseFloat(input.value);
+    if(isNaN(val)) return;
+    
+    if(confirm(`Set Magnetic Declination to ${val.toFixed(2)}° and burn to Flash?`)) {
+        emitCommand('set_declination', { declination: val });
+    }
+}
+
 // Slider Number Binding
 function bindSlider(sliderId, textId) {
     const slider = document.getElementById(sliderId);

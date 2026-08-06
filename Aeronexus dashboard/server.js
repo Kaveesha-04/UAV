@@ -142,6 +142,13 @@ const tcpServer = net.createServer((socket) => {
         removePendingBySocket(socket);
         broadcastFleetStatus();
     });
+
+    socket.on('close', () => {
+        console.log(`[TCP] Connection #${pendingId} closed`);
+        removeDroneBySocket(socket);
+        removePendingBySocket(socket);
+        broadcastFleetStatus();
+    });
 });
 
 tcpServer.listen(TCP_PORT, '0.0.0.0', () => {
@@ -314,6 +321,12 @@ app.get('/api/fleet', (req, res) => {
 io.on('connection', (wsSocket) => {
     console.log('[WS] Dashboard client connected');
 
+    // Validate token on connection
+    const token = wsSocket.handshake.auth?.token;
+    if (token && !fleetTokens.has(token)) {
+        wsSocket.emit('fleet:error', { message: 'Unauthorized session expired. Please login again.' });
+    }
+
     // Send initial fleet status
     wsSocket.emit('fleet:status', getFleetStatus());
 
@@ -456,6 +469,9 @@ io.on('connection', (wsSocket) => {
                 break;
             case 'calibrate_mag':
                 sendCommandToDrone(droneId, `C,${payload.x},${payload.y},${payload.z}\n`);
+                break;
+            case 'set_declination':
+                sendCommandToDrone(droneId, `C,DECL,${payload.declination}\n`);
                 break;
             case 'heartbeat':
                 sendCommandToDrone(droneId, `H\n`);

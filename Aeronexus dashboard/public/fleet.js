@@ -778,6 +778,9 @@ socket.on('drone:telemetry', (data) => {
 
 socket.on('fleet:error', (data) => {
     alert('Fleet Error: ' + data.message);
+    if (data.message.includes('Unauthorized') || data.message.includes('login')) {
+        fleetLogout();
+    }
 });
 
 // =============================================

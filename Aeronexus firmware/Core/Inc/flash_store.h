@@ -4,7 +4,7 @@
 #include "main.h"
 
 // Magic number to check if Flash has been initialized before
-#define EEPROM_MAGIC 0xDEADBEE2
+#define EEPROM_MAGIC 0xDEADBEE3
 
 // Sector 7, Bank 2 on STM32H743x
 #define FLASH_USER_START_ADDR   0x081E0000 
@@ -24,6 +24,9 @@ typedef struct {
     float mag_offset_x;
     float mag_offset_y;
     float mag_offset_z;
+    
+    // Magnetic Declination
+    float mag_declination;
     
 } Flash_Data;
 
