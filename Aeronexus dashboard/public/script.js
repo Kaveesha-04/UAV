@@ -199,7 +199,7 @@ function initAttitude3D() {
     const frontLedGeo = new THREE.SphereGeometry(0.045, 8, 4);
     const frontLedMat = new THREE.MeshPhongMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.8 });
     const frontLed = new THREE.Mesh(frontLedGeo, frontLedMat);
-    frontLed.position.set(0, 0.06, 0.47);
+    frontLed.position.set(0, 0.06, -0.47);
     droneGroup.add(frontLed);
 
     scene.add(droneGroup);
@@ -222,9 +222,9 @@ function updateAttitude3D(roll, pitch, yaw) {
     if (!attitudeScene) return;
     const { droneGroup } = attitudeScene;
     droneGroup.rotation.order = 'YXZ';
-    droneGroup.rotation.x = -(pitch || 0) * Math.PI / 180;
+    droneGroup.rotation.x = (pitch || 0) * Math.PI / 180;
     droneGroup.rotation.y = -((yaw || 0) + 180) * Math.PI / 180;
-    droneGroup.rotation.z = (roll || 0) * Math.PI / 180;
+    droneGroup.rotation.z = -(roll || 0) * Math.PI / 180;
 }
 
 // Init 3D on load
@@ -372,17 +372,16 @@ function handleTelemetry(data) {
         updateAttitude3D(data.r, data.p, data.y);
     }
 
-    // Update Attitude text
+    // Update Attitude
     if (data.r !== undefined) {
-        document.getElementById('val-roll').innerText = data.r.toFixed(1) + '°';
-        // Also update 2D horizon as fallback
+        document.getElementById('val-roll').innerText = (-data.r).toFixed(1) + '°';
         const pitchVal = data.p || 0;
         const rollVal = data.r || 0;
         if (artHorizon) {
             artHorizon.style.transform = `rotate(${rollVal}deg) translateY(${pitchVal * 2}%)`;
         }
     }
-    if (data.p !== undefined) document.getElementById('val-pitch').innerText = data.p.toFixed(1) + '°';
+    if (data.p !== undefined) document.getElementById('val-pitch').innerText = (-data.p).toFixed(1) + '°';
     if (data.y !== undefined) document.getElementById('val-yaw').innerText = data.y.toFixed(1) + '°';
     
     // Update Navigation

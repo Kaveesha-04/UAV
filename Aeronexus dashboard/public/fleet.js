@@ -241,7 +241,7 @@ function createDroneModel(color = 0x0ea5e9) {
         emissiveIntensity: 0.8
     });
     const frontLed = new THREE.Mesh(frontLedGeo, frontLedMat);
-    frontLed.position.set(0, 0.05, 0.42);
+    frontLed.position.set(0, 0.05, -0.42);
     group.add(frontLed);
 
     return { group, propellers, led, frontLed };
@@ -301,14 +301,14 @@ function animate3DScene(sceneData, roll, pitch, yaw) {
     if (droneModel && droneModel.group) {
         const rollRad = (roll || 0) * Math.PI / 180;
         const pitchRad = (pitch || 0) * Math.PI / 180;
-
         droneModel.group.rotation.order = 'YXZ';
-        droneModel.group.rotation.x = -pitchRad;
+        droneModel.group.rotation.x = pitchRad;
         droneModel.group.rotation.y = -((yaw || 0) + 180) * Math.PI / 180;
-        droneModel.group.rotation.z = rollRad;
+        droneModel.group.rotation.z = -rollRad;
 
         // Spin propellers
         droneModel.propellers.forEach((prop, i) => {
+            // Alternating rotation directions for quadcopter
             prop.rotation.y += (i % 2 === 0 ? 0.15 : -0.15);
         });
     }
@@ -966,3 +966,76 @@ document.addEventListener('DOMContentLoaded', () => {
         if (fleetMap) fleetMap.invalidateSize();
     }, 500);
 });
+
+// =============================================
+// ESP32 WIFI PROVISIONING
+// =============================================
+
+function openProvisionModal() {
+    document.getElementById('provision-modal').classList.add('active');
+    document.getElementById('prov-msg').style.display = 'none';
+    
+    // Auto-fetch the local IP to suggest to the user
+    fetch('/api/ip', {
+        headers: { 'Authorization': `Bearer ${fleetToken}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if(data && data.ip) {
+            document.getElementById('prov-ip').value = data.ip;
+        }
+    })
+    .catch(err => console.error("Could not fetch local IP:", err));
+}
+
+function closeProvisionModal() {
+    document.getElementById('provision-modal').classList.remove('active');
+}
+
+async function sendProvisionConfig() {
+    const ssid = document.getElementById('prov-ssid').value.trim();
+    const pass = document.getElementById('prov-pass').value.trim();
+    const ip = document.getElementById('prov-ip').value.trim();
+    const msgBox = document.getElementById('prov-msg');
+
+    if (!ssid || !ip) {
+        msgBox.style.display = 'block';
+        msgBox.style.color = '#ef4444';
+        msgBox.innerHTML = 'SSID and Dashboard IP are required.';
+        return;
+    }
+
+    msgBox.style.display = 'block';
+    msgBox.style.color = '#eab308';
+    msgBox.innerHTML = 'Connecting to ESP32...';
+
+    // Build the URL-encoded payload
+    const payload = new URLSearchParams();
+    payload.append('ssid', ssid);
+    payload.append('password', pass);
+    payload.append('server_ip', ip);
+
+    try {
+        // Send directly to the ESP32's Access Point IP
+        const response = await fetch('http://192.168.4.1/config', {
+            method: 'POST',
+            body: payload,
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+
+        if (response.ok) {
+            msgBox.style.color = '#22c55e';
+            msgBox.innerHTML = 'Success! The ESP32 is rebooting and will connect to your WiFi.';
+            setTimeout(closeProvisionModal, 3000);
+        } else {
+            msgBox.style.color = '#ef4444';
+            msgBox.innerHTML = 'Error: ESP32 rejected the configuration.';
+        }
+    } catch (error) {
+        msgBox.style.color = '#ef4444';
+        msgBox.innerHTML = 'Failed to connect. Are you connected to the "Aeronexus-Setup" WiFi network?';
+        console.error(error);
+    }
+}

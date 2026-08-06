@@ -314,6 +314,26 @@ app.get('/api/fleet', (req, res) => {
     res.json(getFleetStatus());
 });
 
+app.get('/api/ip', (req, res) => {
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    let localIp = '192.168.1.100'; // Default fallback
+    for (const devName in interfaces) {
+        // Skip virtual adapters
+        if (devName.toLowerCase().includes('virtual') || devName.toLowerCase().includes('vbox') || devName.toLowerCase().includes('vmware')) {
+            continue;
+        }
+        const iface = interfaces[devName];
+        for (let i = 0; i < iface.length; i++) {
+            const alias = iface[i];
+            if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
+                localIp = alias.address;
+            }
+        }
+    }
+    res.json({ ip: localIp });
+});
+
 // ==========================================
 // WEBSOCKET — MULTI-DRONE COMMANDS
 // ==========================================
