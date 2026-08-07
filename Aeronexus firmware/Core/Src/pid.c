@@ -40,9 +40,8 @@ float PID_Compute(PID_Controller *pid, float setpoint, float measured, float dt,
     }
     
     // Clamp the integral as a final safety net
-    float i_max = 400.0f; 
-    if(pid->integral > i_max) pid->integral = i_max;
-    else if(pid->integral < -i_max) pid->integral = -i_max;
+    if(pid->integral > pid->i_max) pid->integral = pid->i_max;
+    else if(pid->integral < -pid->i_max) pid->integral = -pid->i_max;
     
     float I_out = pid->Ki * pid->integral;
     
@@ -101,9 +100,8 @@ float PID_Compute_Angular(PID_Controller *pid, float setpoint, float measured, f
     }
     
     // Hard clamp just in case
-    float i_max = 400.0f; 
-    if(pid->integral > i_max) pid->integral = i_max;
-    else if(pid->integral < -i_max) pid->integral = -i_max;
+    if(pid->integral > pid->i_max) pid->integral = pid->i_max;
+    else if(pid->integral < -pid->i_max) pid->integral = -pid->i_max;
     
     float I_out = pid->Ki * pid->integral;
     

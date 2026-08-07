@@ -135,16 +135,22 @@ void loop() {
     }
   }
 
-  // 3. AUTO-RECONNECT LOGIC
+  // 3. AUTO-RECONNECT LOGIC (with exponential backoff)
   static unsigned long last_connect_attempt = 0;
-  if (millis() - last_connect_attempt > 2000) {
+  static unsigned long reconnect_interval = 2000; // Start at 2 seconds
+  if (millis() - last_connect_attempt > reconnect_interval) {
     last_connect_attempt = millis();
     
     if (WiFi.status() != WL_CONNECTED) {
       WiFi.disconnect();
       WiFi.begin(ssid.c_str(), password.c_str());
-    } else if (!client.connected() && server_ip.length() > 0) {
-      client.connect(server_ip.c_str(), server_port);
+      // Exponential backoff: 2s → 4s → 8s → 16s → cap at 30s
+      if (reconnect_interval < 30000) reconnect_interval *= 2;
+    } else {
+      reconnect_interval = 2000; // Reset backoff on successful WiFi connection
+      if (!client.connected() && server_ip.length() > 0) {
+        client.connect(server_ip.c_str(), server_port);
+      }
     }
   }
 }

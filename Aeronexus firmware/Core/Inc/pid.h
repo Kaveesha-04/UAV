@@ -15,6 +15,7 @@ typedef struct {
     float prev_derivative; // D-term Low-Pass Filter state
     float out_max;
     float out_min;
+    float i_max;           // Integral clamp limit (per-instance)
 } PID_Controller;
 
 // Function Prototype

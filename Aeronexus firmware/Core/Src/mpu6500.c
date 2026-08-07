@@ -65,8 +65,8 @@ void MPU6500_Calibrate(SPI_HandleTypeDef *hspi) {
         int16_t aX = (int16_t)(Rec_Data[0] << 8 | Rec_Data[1]);
         int16_t aY = (int16_t)(Rec_Data[2] << 8 | Rec_Data[3]);
         int16_t aZ = (int16_t)(Rec_Data[4] << 8 | Rec_Data[5]);
-        ar_s += atan2(aY, aZ) * RAD_TO_DEG;
-        ap_s += atan2(-aX, sqrt(aY*aY + aZ*aZ)) * RAD_TO_DEG;
+        ar_s += atan2f(aY, aZ) * RAD_TO_DEG;
+        ap_s += atan2f(-aX, sqrtf(aY*aY + aZ*aZ)) * RAD_TO_DEG;
 
         HAL_Delay(1);
     }

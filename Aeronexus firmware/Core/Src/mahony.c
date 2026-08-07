@@ -1,16 +1,19 @@
 #include "mahony.h"
+#include <string.h>
+#include <stdint.h>
 
 float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f; // quaternion of sensor frame relative to auxiliary frame
 float integralFBx = 0.0f,  integralFBy = 0.0f, integralFBz = 0.0f; // integral error terms scaled by Ki
 
-// Fast inverse square-root
+// Fast inverse square-root (memcpy version — avoids strict aliasing UB)
 // See: http://en.wikipedia.org/wiki/Fast_inverse_square_root
 static float invSqrt(float x) {
     float halfx = 0.5f * x;
     float y = x;
-    long i = *(long*)&y;
-    i = 0x5f3759df - (i>>1);
-    y = *(float*)&i;
+    uint32_t i;
+    memcpy(&i, &y, sizeof(i));
+    i = 0x5f3759df - (i >> 1);
+    memcpy(&y, &i, sizeof(y));
     y = y * (1.5f - (halfx * y * y));
     return y;
 }

@@ -9,16 +9,46 @@ const io = new Server(server);
 
 // Auth storage
 const crypto = require('crypto');
-const ADMIN_PASSWORD = 'admin123'; // Global Fleet Password
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123'; // Set via env var in production
 const fleetTokens = new Set();
 const droneTokens = new Map(); // token -> droneId
 const dronePins = new Map(); // droneId -> PIN
+
+// --- Rate Limiting (IP-based, in-memory) ---
+const loginAttempts = new Map(); // IP -> { count, resetTime }
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX = 10;       // Max 10 attempts per minute
+
+function checkRateLimit(ip) {
+    const now = Date.now();
+    const entry = loginAttempts.get(ip);
+    if (!entry || now > entry.resetTime) {
+        loginAttempts.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+        return true;
+    }
+    entry.count++;
+    if (entry.count > RATE_LIMIT_MAX) {
+        return false;
+    }
+    return true;
+}
+
+// Periodically clean up expired rate limit entries
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, entry] of loginAttempts) {
+        if (now > entry.resetTime) loginAttempts.delete(ip);
+    }
+}, 60000);
 
 app.use(express.json());
 
 // --- REST API AUTHENTICATION ---
 
 app.post('/api/login/fleet', (req, res) => {
+    if (!checkRateLimit(req.ip)) {
+        return res.status(429).json({ success: false, message: 'Too many login attempts. Try again later.' });
+    }
     const { password } = req.body;
     if (password === ADMIN_PASSWORD) {
         const token = crypto.randomUUID();
@@ -30,6 +60,9 @@ app.post('/api/login/fleet', (req, res) => {
 });
 
 app.post('/api/login/drone', (req, res) => {
+    if (!checkRateLimit(req.ip)) {
+        return res.status(429).json({ success: false, message: 'Too many login attempts. Try again later.' });
+    }
     const { droneId, pin } = req.body;
     if (dronePins.get(droneId) === pin) {
         const token = crypto.randomUUID();

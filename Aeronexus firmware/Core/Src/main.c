@@ -152,23 +152,21 @@ uint16_t prev_time_us;
 float dt;
 
 // PID Controllers (Attitude)
-PID_Controller pid_roll = {1.2f, 0.5f, 0.012f, 0.0f,   0.0f,
-                           0.0f, 0.0f, 0.0f,  200.0f, -200.0f};
-PID_Controller pid_pitch = {1.2f, 0.5f, 0.012f, 0.0f,   0.0f,
-                            0.0f, 0.0f, 0.0f,  200.0f, -200.0f};
-PID_Controller pid_yaw = {1.0f, 0.5f, 0.000f, 0.0f,   0.0f,
-                          0.0f, 0.0f, 0.0f, 200.0f, -200.0f};
+//                          Kp    Ki     Kd      Kf    int   prev_m prev_s prev_d  max     min    i_max
+PID_Controller pid_roll = {1.4f, 0.4f, 0.018f, 0.03f, 0.0f, 0.0f,  0.0f,  0.0f, 200.0f, -200.0f, 400.0f};
+PID_Controller pid_pitch = {1.4f, 0.4f, 0.018f, 0.03f, 0.0f, 0.0f,  0.0f,  0.0f, 200.0f, -200.0f, 400.0f};
+PID_Controller pid_yaw = {1.5f, 0.5f, 0.000f, 0.0f, 0.0f, 0.0f,  0.0f,  0.0f, 200.0f, -200.0f, 400.0f};
 
 // PID Controllers (Altitude and GPS)
 PID_Controller pid_alt = {
-    50.0f, 10.0f, 15.0f, 0.0f,   0.0f,
-    0.0f, 0.0f, 0.0f, 300.0f, -200.0f}; // Output is throttle override
+    45.0f, 8.0f, 20.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f, 300.0f, -200.0f, 200.0f}; // Output is throttle override
 PID_Controller pid_gps_pitch = {
-    0.05f, 0.01f, 0.02f, 0.0f,  0.0f,
-    0.0f,  0.0f, 0.0f,  20.0f, -20.0f}; // Output is pitch angle (max 20 deg)
+    0.08f, 0.01f, 0.03f, 0.0f, 0.0f,
+    0.0f,  0.0f, 0.0f,  20.0f, -20.0f, 100.0f}; // Output is pitch angle (max 20 deg)
 PID_Controller pid_gps_roll = {
-    0.05f, 0.01f, 0.02f, 0.0f,  0.0f,
-    0.0f,  0.0f, 0.0f,  20.0f, -20.0f}; // Output is roll angle (max 20 deg)
+    0.08f, 0.01f, 0.03f, 0.0f, 0.0f,
+    0.0f,  0.0f, 0.0f,  20.0f, -20.0f, 100.0f}; // Output is roll angle (max 20 deg)
 
 // Navigation State Variables
 uint8_t alt_hold_active = 0;
@@ -301,6 +299,19 @@ void I2C1_Recover(void) {
     QMC5883P_Init(&hi2c1);
 
   i2c_error_count = 0;
+}
+
+// Helper to build Flash_Data from current globals (eliminates copy-paste)
+Flash_Data Build_Flash_Data(void) {
+    Flash_Data fd;
+    fd.r_p = pid_roll.Kp;  fd.r_i = pid_roll.Ki;  fd.r_d = pid_roll.Kd;  fd.r_f = pid_roll.Kf;
+    fd.p_p = pid_pitch.Kp; fd.p_i = pid_pitch.Ki; fd.p_d = pid_pitch.Kd; fd.p_f = pid_pitch.Kf;
+    fd.y_p = pid_yaw.Kp;   fd.y_i = pid_yaw.Ki;   fd.y_d = pid_yaw.Kd;   fd.y_f = pid_yaw.Kf;
+    fd.mag_offset_x = mag_offset_x;
+    fd.mag_offset_y = mag_offset_y;
+    fd.mag_offset_z = mag_offset_z;
+    fd.mag_declination = current_declination;
+    return fd;
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
@@ -766,23 +777,7 @@ int main(void) {
         // Format B: B (Burn PIDs to Flash)
         else if (esp_parse_buffer[0] == 'B') {
           if (current_state == STATE_DISARMED) {
-            Flash_Data fd;
-            fd.r_p = pid_roll.Kp;
-            fd.r_i = pid_roll.Ki;
-            fd.r_d = pid_roll.Kd;
-            fd.r_f = pid_roll.Kf;
-            fd.p_p = pid_pitch.Kp;
-            fd.p_i = pid_pitch.Ki;
-            fd.p_d = pid_pitch.Kd;
-            fd.p_f = pid_pitch.Kf;
-            fd.y_p = pid_yaw.Kp;
-            fd.y_i = pid_yaw.Ki;
-            fd.y_d = pid_yaw.Kd;
-            fd.y_f = pid_yaw.Kf;
-            fd.mag_offset_x = mag_offset_x;
-            fd.mag_offset_y = mag_offset_y;
-            fd.mag_offset_z = mag_offset_z;
-            fd.mag_declination = current_declination;
+            Flash_Data fd = Build_Flash_Data();
             Flash_Save(&fd);
           }
         }
@@ -792,49 +787,28 @@ int main(void) {
             char *val_str = esp_parse_buffer + 7;
             current_declination = atof(val_str);
             if (current_state == STATE_DISARMED) {
-                Flash_Data fd;
-                fd.r_p = pid_roll.Kp; fd.r_i = pid_roll.Ki; fd.r_d = pid_roll.Kd; fd.r_f = pid_roll.Kf;
-                fd.p_p = pid_pitch.Kp; fd.p_i = pid_pitch.Ki; fd.p_d = pid_pitch.Kd; fd.p_f = pid_pitch.Kf;
-                fd.y_p = pid_yaw.Kp; fd.y_i = pid_yaw.Ki; fd.y_d = pid_yaw.Kd; fd.y_f = pid_yaw.Kf;
-                fd.mag_offset_x = mag_offset_x; fd.mag_offset_y = mag_offset_y; fd.mag_offset_z = mag_offset_z;
-                fd.mag_declination = current_declination;
-                Flash_Save(&fd);
+              Flash_Data fd = Build_Flash_Data();
+              Flash_Save(&fd);
             }
           } else {
             char *token = strtok((char *)esp_parse_buffer, ",");
-          if (token != NULL && token[0] == 'C') {
-            char *ox_str = strtok(NULL, ",");
-            char *oy_str = strtok(NULL, ",");
-            char *oz_str = strtok(NULL, "\n");
-            if (ox_str && oy_str && oz_str) {
-              mag_offset_x = atof(ox_str);
-              mag_offset_y = atof(oy_str);
-              mag_offset_z = atof(oz_str);
+            if (token != NULL && token[0] == 'C') {
+              char *ox_str = strtok(NULL, ",");
+              char *oy_str = strtok(NULL, ",");
+              char *oz_str = strtok(NULL, "\n");
+              if (ox_str && oy_str && oz_str) {
+                mag_offset_x = atof(ox_str);
+                mag_offset_y = atof(oy_str);
+                mag_offset_z = atof(oz_str);
 
-              if (current_state == STATE_DISARMED) {
-                // Automatically burn to Flash memory too!
-                Flash_Data fd;
-                fd.r_p = pid_roll.Kp;
-                fd.r_i = pid_roll.Ki;
-                fd.r_d = pid_roll.Kd;
-                fd.r_f = pid_roll.Kf;
-                fd.p_p = pid_pitch.Kp;
-                fd.p_i = pid_pitch.Ki;
-                fd.p_d = pid_pitch.Kd;
-                fd.p_f = pid_pitch.Kf;
-                fd.y_p = pid_yaw.Kp;
-                fd.y_i = pid_yaw.Ki;
-                fd.y_d = pid_yaw.Kd;
-                fd.y_f = pid_yaw.Kf;
-                fd.mag_offset_x = mag_offset_x;
-                fd.mag_offset_y = mag_offset_y;
-                fd.mag_offset_z = mag_offset_z;
-                fd.mag_declination = current_declination;
-                Flash_Save(&fd);
+                if (current_state == STATE_DISARMED) {
+                  // Automatically burn to Flash memory too!
+                  Flash_Data fd = Build_Flash_Data();
+                  Flash_Save(&fd);
+                }
               }
             }
           }
-        }
         }
         // Format H: H (Heartbeat)
         else if (esp_parse_buffer[0] == 'H') {
@@ -1161,30 +1135,44 @@ int main(void) {
           float m4 = throttle_output - pid_out_roll + pid_out_pitch +
                      pid_out_yaw; // CH4: Front Right (CCW)
 
-          // Limit PWM to prevent motors from stalling in mid-air
-          // 1150us is the "Motor Idle Speed". It ensures motors never stop
-          // spinning while the drone is actively flying, even if the PID loop
-          // tries to lower them.
+          // Symmetric AirMode Mix Scaling (Betaflight V4+ style)
+          // Shifts ALL motors equally to keep every motor within [idle, max]
+          // while perfectly preserving PID differentials on both ends.
 
-          // AirMode Mix Scaling - Prevent loss of rotational authority at zero throttle
+          float motor_max = 1940.0f;
+
           float min_motor = m1;
           if (m2 < min_motor) min_motor = m2;
           if (m3 < min_motor) min_motor = m3;
           if (m4 < min_motor) min_motor = m4;
 
+          float max_motor = m1;
+          if (m2 > max_motor) max_motor = m2;
+          if (m3 > max_motor) max_motor = m3;
+          if (m4 > max_motor) max_motor = m4;
+
+          // Low-side: boost all motors up if any drops below idle
           if (min_motor < idle_speed) {
             float boost = idle_speed - min_motor;
-            m1 += boost;
-            m2 += boost;
-            m3 += boost;
-            m4 += boost;
+            m1 += boost;  m2 += boost;  m3 += boost;  m4 += boost;
+            max_motor += boost; // Track the new max after boost
           }
 
-          // Apply upper constraints
-          if (m1 > 1940.0f) m1 = 1940.0f;
-          if (m2 > 1940.0f) m2 = 1940.0f;
-          if (m3 > 1940.0f) m3 = 1940.0f;
-          if (m4 > 1940.0f) m4 = 1940.0f;
+          // High-side: pull all motors down if any exceeds max
+          if (max_motor > motor_max) {
+            float pull = max_motor - motor_max;
+            m1 -= pull;  m2 -= pull;  m3 -= pull;  m4 -= pull;
+          }
+
+          // Final safety clamp (should rarely trigger after symmetric scaling)
+          if (m1 < idle_speed) m1 = idle_speed;
+          if (m2 < idle_speed) m2 = idle_speed;
+          if (m3 < idle_speed) m3 = idle_speed;
+          if (m4 < idle_speed) m4 = idle_speed;
+          if (m1 > motor_max) m1 = motor_max;
+          if (m2 > motor_max) m2 = motor_max;
+          if (m3 > motor_max) m3 = motor_max;
+          if (m4 > motor_max) m4 = motor_max;
 
           motor1 = (uint16_t)m1;
           motor2 = (uint16_t)m2;
@@ -1242,8 +1230,8 @@ int main(void) {
         const char *s_slon = (gps_lon_smooth < 0) ? "-" : "";
 
         // Telemetry JSON with survey data appended
-        sprintf(
-            (char *)uart_buf,
+        snprintf(
+            (char *)uart_buf, sizeof(uart_buf),
             "{\"v\":%d.%02d,\"r\":%s%d.%d,\"p\":%s%d.%d,\"y\":%s%d.%d,\"a\":%s%"
             "d.%d,\"d\":%s%d.%d,\"glat\":%s%d.%05d,\"glon\":%s%d.%05d,\"gf\":%"
             "d,\"t\":%d,\"mt\":%d,"

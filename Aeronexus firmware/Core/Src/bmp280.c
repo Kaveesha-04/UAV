@@ -87,7 +87,7 @@ void BMP280_Read_Data(SPI_HandleTypeDef *hspi) {
     pressure = (float)p / 256.0f / 100.0f; // hPa
     
     // Altitude calculation (hypsometric formula)
-    raw_alt = 44330.0f * (1.0f - pow(pressure / 1013.25f, 0.1903f));
+    raw_alt = 44330.0f * (1.0f - powf(pressure / 1013.25f, 0.1903f));
     float current_altitude = raw_alt - altitude_offset;
     
     // Exponential Moving Average (EMA) Low-Pass Filter
