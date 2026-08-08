@@ -29,7 +29,7 @@ float gps_speed = 0.0f;
 
 // EMA smoothing factor: 0.3 = moderate smoothing (responds in ~3 updates)
 // Lower = smoother but slower to respond, Higher = noisier but faster
-#define GPS_EMA_ALPHA 0.3f
+#define GPS_EMA_ALPHA 0.1f
 
 // Convert NMEA DDMM.MMMM to Decimal Degrees
 static float NMEA_to_Decimal(float nmea_coord, char direction) {

@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Preferences.h>
+#include <FastLED.h>
 
 // --- WIFI CONFIGURATION (Defaults) ---
 String ssid = "";
@@ -20,8 +21,90 @@ bool apMode = false;
 #define RXD2 17
 #define TXD2 5
 
+// --- LED CONFIGURATION ---
+#define LED_PIN 18
+#define NUM_LEDS 8
+CRGB leds[NUM_LEDS];
+
+enum SystemState {
+  STATE_AP_MODE,
+  STATE_CONNECTING,
+  STATE_CONNECTED,
+  STATE_TELEMETRY
+};
+SystemState currentState = STATE_CONNECTING;
+unsigned long lastTelemetryTime = 0;
+
 String stm32_buffer = "";
 String web_buffer = "";
+
+// --- NON-BLOCKING LED ANIMATIONS ---
+void updateLEDs() {
+  static unsigned long lastUpdate = 0;
+  static uint8_t pos = 0;
+  static int8_t delta = 1;
+  unsigned long now = millis();
+
+  // Determine State
+  if (apMode) {
+    currentState = STATE_AP_MODE;
+  } else if (WiFi.status() != WL_CONNECTED) {
+    currentState = STATE_CONNECTING;
+  } else if (now - lastTelemetryTime < 1000) { // Received telemetry recently
+    currentState = STATE_TELEMETRY;
+  } else {
+    currentState = STATE_CONNECTED;
+  }
+
+  // Update animations at ~33fps
+  if (now - lastUpdate > 30) { 
+    lastUpdate = now;
+
+    switch (currentState) {
+      case STATE_AP_MODE: // Slow Breathing Purple
+        {
+          float breath = (exp(sin(now / 1000.0 * PI)) - 0.36787944) * 108.0;
+          fill_solid(leds, NUM_LEDS, CRGB(128, 0, 128)); // Purple
+          FastLED.setBrightness(constrain(breath, 10, 255));
+        }
+        break;
+
+      case STATE_CONNECTING: // Fast Scanning Yellow
+        {
+          FastLED.setBrightness(150);
+          fadeToBlackBy(leds, NUM_LEDS, 40);
+          leds[pos] = CRGB::Yellow;
+          pos += delta;
+          if (pos == 0 || pos == NUM_LEDS - 1) delta = -delta;
+        }
+        break;
+
+      case STATE_CONNECTED: // Solid Dim Green with slow pulse
+        {
+          float breath = (exp(sin(now / 2000.0 * PI)) - 0.36787944) * 108.0;
+          fill_solid(leds, NUM_LEDS, CRGB::Green);
+          FastLED.setBrightness(constrain(breath, 10, 100));
+        }
+        break;
+
+      case STATE_TELEMETRY: // Aeronexus Cylon (Cyan comet, purple trail)
+        {
+          FastLED.setBrightness(255);
+          fadeToBlackBy(leds, NUM_LEDS, 60); 
+          for (int i = 0; i < NUM_LEDS; i++) {
+            if (leds[i].r < 20 && leds[i].g < 20 && leds[i].b < 20) {
+                leds[i] = CRGB(20, 0, 40); // Dim purple background
+            }
+          }
+          leds[pos] = CRGB::Cyan;
+          pos += delta;
+          if (pos == 0 || pos == NUM_LEDS - 1) delta = -delta;
+        }
+        break;
+    }
+    FastLED.show();
+  }
+}
 
 void handleConfig() {
   // CORS Headers
@@ -56,6 +139,9 @@ void handleConfig() {
 void setup() {
   Serial.begin(115200);  // USB Debugging
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2); // STM32 Telemetry
+  
+  FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+  FastLED.setBrightness(100);
 
   // Load configuration from flash
   preferences.begin("wifi_config", true);
@@ -99,6 +185,8 @@ void setup() {
 }
 
 void loop() {
+  updateLEDs(); // Non-blocking animation loop
+
   if (apMode) {
     server.handleClient();
     return; // Don't do telemetry while in setup mode
@@ -112,6 +200,7 @@ void loop() {
         Serial.println("STM32: " + stm32_buffer); // Print to USB for debug
         if (client.connected()) {
           client.println(stm32_buffer);           // Send JSON to Dashboard
+          lastTelemetryTime = millis();           // Update telemetry active state
         }
         stm32_buffer = "";
       }

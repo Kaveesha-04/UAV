@@ -134,7 +134,7 @@ let currentNoiseLevel = 0; // In µT
 // Detect straight flight lines vs. turns based on heading rate of change
 let headingHistory = []; // Recent heading values
 const HEADING_HISTORY_SIZE = 5;
-const TURN_THRESHOLD = 8.0; // Degrees per update — above this = turning
+const TURN_THRESHOLD = 20.0; // Loosened for walking tests to prevent false turn rejections
 let isInStraightLine = true;
 let turnRejectCount = 0;
 
@@ -685,9 +685,12 @@ registerTelemetryHandler((data) => {
     let gpsQuality = getGPSQuality(currentHdop, currentSats);
     let qualityBadge = document.getElementById('gps-quality-badge');
     if (qualityBadge) {
-        qualityBadge.innerText = `${gpsQuality.label} · ${currentSats} SAT · HDOP ${currentHdop.toFixed(1)}`;
-        qualityBadge.style.color = gpsQuality.color;
-        qualityBadge.style.borderColor = gpsQuality.color + '66';
+        let newText = `${gpsQuality.label} · ${currentSats} SAT · HDOP ${currentHdop.toFixed(1)}`;
+        if (qualityBadge.innerText !== newText) {
+            qualityBadge.innerText = newText;
+            qualityBadge.style.color = gpsQuality.color;
+            qualityBadge.style.borderColor = gpsQuality.color + '66';
+        }
     }
 
     // Compute Magnetic Magnitude using averaged mag readings when available
@@ -763,7 +766,7 @@ registerTelemetryHandler((data) => {
         if (currentSats < MIN_SATELLITES) return;
         
         // --- Speed-based filtering ---
-        if (currentSpeed < 0.3 && surveyData.length > 0) return;
+        if (currentSpeed < 0.1 && surveyData.length > 0) return;
         if (currentSpeed > 15.0) return;
         
         // --- Survey Line Detection ---
@@ -781,7 +784,7 @@ registerTelemetryHandler((data) => {
         }
         
         // --- Adaptive Distance Threshold ---
-        let minDistance = Math.max(1.5, 2.0 * currentHdop);
+        let minDistance = Math.max(0.5, 1.0 * currentHdop); // Plot highly frequent dots (max 1 per 0.5m)
         
         let distance = 100;
         if (lastPlottedLat !== 0 && lastPlottedLon !== 0) {
