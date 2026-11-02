@@ -1019,8 +1019,16 @@ int main(void) {
         } else {
           // ACTIVE FLIGHT MODE
 
-          // Linear throttle ramp from idle to max — no sudden jump
-          float mapped_throttle = 1150.0f + ((base_throttle - 1120.0f) / (2000.0f - 1120.0f)) * (2000.0f - 1150.0f);
+          // Expo throttle curve — flattens response around hover for fine control
+          float norm = (base_throttle - 1120.0f) / (2000.0f - 1120.0f);
+          if (norm < 0.0f) norm = 0.0f;
+          if (norm > 1.0f) norm = 1.0f;
+
+          // Expo blend: 0.0 = linear, 0.35 = moderate expo, 1.0 = heavy cubic
+          float throttle_expo = 0.35f;
+          float expo_norm = (1.0f - throttle_expo) * norm + throttle_expo * norm * norm * norm;
+
+          float mapped_throttle = 1150.0f + expo_norm * (2000.0f - 1150.0f);
           if (mapped_throttle > 2000.0f) mapped_throttle = 2000.0f;
           if (mapped_throttle < 1150.0f) mapped_throttle = 1150.0f;
 
@@ -1045,17 +1053,43 @@ int main(void) {
               tpa_factor = 0.1f; // Safety clamp
           }
 
-          // 1. Altitude Hold Override
+          // 1. Altitude Hold Override (DJI-style climb rate control)
           float current_altitude = BMP280_GetAltitude();
           float throttle_output = mapped_throttle;
-          static float hover_throttle = 1600.0f;
+          static float hover_throttle = 1600.0f; // Tune to your drone's actual hover point
           static uint8_t hover_locked = 0;
+
           if (alt_hold_active) {
-            // On first activation, lock the pilot's current throttle as the hover baseline
+            // DJI-style: stick center = hover, up = climb, down = descend
+            float stick_center = 1575.0f;    // Center of mapped throttle range
+            float deadband = 50.0f;          // ±50 around center = hover zone
+            float max_climb_rate = 2.0f;     // m/s up
+            float max_descend_rate = 1.5f;   // m/s down
+
             if (!hover_locked) {
+              // On first activation, capture current throttle as hover baseline
               hover_throttle = mapped_throttle;
               hover_locked = 1;
             }
+
+            float stick_offset = mapped_throttle - stick_center;
+
+            if (fabsf(stick_offset) < deadband) {
+              // Stick centered — hold current target_altitude (PID maintains it)
+            } else if (stick_offset > 0) {
+              // Stick pushed up — climb at proportional rate
+              float climb_rate = ((stick_offset - deadband) / (2000.0f - stick_center - deadband)) * max_climb_rate;
+              target_altitude += climb_rate * dt;
+            } else {
+              // Stick pushed down — descend at proportional rate
+              float descend_rate = (((-stick_offset) - deadband) / (stick_center - 1150.0f - deadband)) * max_descend_rate;
+              target_altitude -= descend_rate * dt;
+            }
+
+            // Altitude safety limits
+            if (target_altitude < 0.5f) target_altitude = 0.5f;
+            if (target_altitude > 120.0f) target_altitude = 120.0f;
+
             float alt_correction = PID_Compute(&pid_alt, target_altitude,
                                                current_altitude, dt, 1.0f);
             throttle_output = hover_throttle + alt_correction;

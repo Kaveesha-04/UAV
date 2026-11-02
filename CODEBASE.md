@@ -244,12 +244,20 @@ CH4 (m4) = Front Right(CCW): throttle - roll + pitch + yaw
 ```
 Raw NRF throttle (1000-2000) → mapped_throttle:
   ≤ 1120: Zero throttle, motors at 1100 (off)
-  > 1120: Linear ramp from 1150 to 2000
+  > 1120: Expo curve (factor 0.35) from 1150 to 2000
+          Formula: blend of 65% linear + 35% cubic
+          Effect:  Fine control around hover midpoint, aggressive at extremes
 
 TPA (Throttle PID Attenuation):
   Below 1500: tpa_factor = 1.0 (full PID)
   1500-2000:  Linear reduction, max 30% reduction at full throttle
   Safety clamp: tpa_factor ≥ 0.1
+
+Altitude Hold (DJI-style climb rate control):
+  Stick center (±50 deadband around 1575): Hold current altitude
+  Stick above deadband: Climb at proportional rate (max 2.0 m/s)
+  Stick below deadband: Descend at proportional rate (max 1.5 m/s)
+  Altitude limits: 0.5m min, 120m max
 ```
 
 #### Magnetometer Heading (`Get_Mag_Heading`)
