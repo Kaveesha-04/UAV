@@ -61,6 +61,25 @@ function emitCommand(type, payload) {
 }
 
 // Handle Authentication Errors
+// =============================================
+// REMOTE (ESP32 TX) Wi-Fi LINK STATUS
+// =============================================
+let lastRemoteTs = 0;
+socket.on('remote:telemetry', (r) => {
+    lastRemoteTs = Date.now();
+    const el = document.getElementById('remote-wifi-status');
+    if (!el) return;
+    el.innerText = 'REMOTE Wi-Fi: ONLINE | NRF TX: ' + (r.nrf_ok ? 'OK' : 'FAIL');
+    el.style.color = r.nrf_ok ? '#10b981' : '#fb923c';
+});
+setInterval(() => {
+    if (lastRemoteTs && Date.now() - lastRemoteTs > 2000) {
+        const el = document.getElementById('remote-wifi-status');
+        if (el) { el.innerText = 'REMOTE Wi-Fi: OFFLINE'; el.style.color = '#f43f5e'; }
+        lastRemoteTs = 0;
+    }
+}, 1000);
+
 socket.on('drone:auth_error', (data) => {
     if (data.droneId === DRONE_ID) {
         alert(data.message);

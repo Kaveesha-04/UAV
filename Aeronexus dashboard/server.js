@@ -73,6 +73,27 @@ app.post('/api/login/drone', (req, res) => {
     }
 });
 
+// --- REMOTE (ESP32 TRANSMITTER) TELEMETRY ---
+// The handheld ESP32 remote POSTs its joystick values over Wi-Fi (~10Hz).
+// We forward them to dashboards as 'remote:telemetry'.
+app.post('/api/telemetry', (req, res) => {
+    const b = req.body || {};
+    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+    const remote = {
+        throttle: num(b.throttle),
+        yaw: num(b.yaw),
+        pitch: num(b.pitch),
+        roll: num(b.roll),
+        nrf_ok: b.nrf_ok === true,
+        ts: Date.now()
+    };
+    if (remote.throttle === null) {
+        return res.status(400).json({ success: false });
+    }
+    io.emit('remote:telemetry', remote);
+    res.json({ success: true });
+});
+
 // Serve static files (the web interface)
 // Disable auto index.html so root '/' hits our redirect to fleet.html
 app.use(express.static('public', { index: false }));

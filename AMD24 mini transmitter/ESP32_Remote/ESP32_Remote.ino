@@ -5,6 +5,15 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <nRF24L01.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+// ---------------- WIFI & DASHBOARD CONFIG ----------------
+// Fill these in. serverUrl must point at the PC running the Aeronexus dashboard
+// (npm start, port 3000). Do NOT commit real credentials to git.
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+const char* serverUrl = "http://YOUR_PC_LOCAL_IP:3000/api/telemetry";
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -33,6 +42,10 @@ struct Data_Package {
 #pragma pack(pop)
 
 Data_Package data;
+volatile bool last_nrf_success = false;
+
+// Protects `data` / `last_nrf_success` shared between Core 1 (loop) and Core 0 (Wi-Fi task)
+portMUX_TYPE dataMux = portMUX_INITIALIZER_UNLOCKED;
 
 // ADC Calibration (Adjust these if your joystick doesn't reach full min/max)
 // The ADS1115 with 1x Gain measures 0 to 4.096V. Usually a 3.3V joystick gives
@@ -72,6 +85,45 @@ int16_t map_joystick(int16_t val, int16_t min_val, int16_t mid_val,
   }
 
   return mapped_val;
+}
+
+// ---------------- CORE 0 BACKGROUND TASK (WIFI HTTP POST) ----------------
+// Streams the joystick values to the dashboard without ever blocking the 50Hz NRF loop.
+void wifiPostTask(void* parameter) {
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(ssid, password);
+  Serial.println("[Core 0] Connecting to Wi-Fi...");
+
+  HTTPClient http;
+  http.setReuse(true);   // Keep TCP connection alive for faster requests
+  http.setTimeout(1500); // Never hang indefinitely if the PC is unreachable
+
+  for (;;) {
+    if (WiFi.status() == WL_CONNECTED) {
+      Data_Package local_copy;
+      bool nrf_ok;
+      portENTER_CRITICAL(&dataMux);
+      local_copy = data;
+      nrf_ok = last_nrf_success;
+      portEXIT_CRITICAL(&dataMux);
+
+      char jsonPayload[128];
+      snprintf(jsonPayload, sizeof(jsonPayload),
+               "{\"throttle\":%u,\"yaw\":%d,\"pitch\":%d,\"roll\":%d,\"nrf_ok\":%s}",
+               local_copy.throttle, local_copy.yaw, local_copy.pitch,
+               local_copy.roll, nrf_ok ? "true" : "false");
+
+      http.begin(serverUrl);
+      http.addHeader("Content-Type", "application/json");
+      http.POST((uint8_t*)jsonPayload, strlen(jsonPayload));
+      http.end();
+
+      vTaskDelay(100 / portTICK_PERIOD_MS); // ~10Hz is plenty for a dashboard
+    } else {
+      vTaskDelay(1000 / portTICK_PERIOD_MS); // Wait for Wi-Fi to (re)connect
+    }
+  }
 }
 
 void setup() {
@@ -134,6 +186,10 @@ void setup() {
       sizeof(Data_Package)); // FORCE 8-byte payload to match STM32!
   radio.stopListening();     // Set as Transmitter
 
+  // Start the non-blocking Wi-Fi & HTTP POST task on Core 0
+  // (Arduino loop() runs on Core 1, so the NRF link is unaffected)
+  xTaskCreatePinnedToCore(wifiPostTask, "WiFiPostTask", 8192, NULL, 1, NULL, 0);
+
   Serial.println("ESP32 Remote Controller Initialized.");
 }
 
@@ -152,7 +208,8 @@ void loop() {
 
     // Map the raw ADC values to the formats expected by the STM32 Firmware
 
-    // Throttle: 1000 to 2000
+    // Throttle: 1000 to 2000 (writes guarded so Core 0 never reads a half-updated struct)
+    portENTER_CRITICAL(&dataMux);
     data.throttle = map(raw_throttle, ADC_MIN, ADC_MAX, 2000, 1000);
     data.throttle = constrain(data.throttle, 1000, 2000);
 
@@ -168,8 +225,14 @@ void loop() {
     data.roll = map_joystick(raw_roll, ADC_MIN, ADC_ROLL_MID, ADC_MAX);
     data.roll = constrain(data.roll, -500, 500);
 
+    portEXIT_CRITICAL(&dataMux);
+
     // Send the payload via NRF24
     bool success = radio.write(&data, sizeof(Data_Package));
+
+    portENTER_CRITICAL(&dataMux);
+    last_nrf_success = success;
+    portEXIT_CRITICAL(&dataMux);
 
     if (success) {
       Serial.printf("SENT OK | T: %d | Y: %d | P: %d | R: %d\n", data.throttle,
@@ -201,9 +264,9 @@ void loop() {
 
       display.setCursor(0, 56);
       if (success) {
-        display.println("NRF: TX OK");
+        display.printf("NRF:OK  WIFI:%s", (WiFi.status() == WL_CONNECTED) ? "OK" : "--");
       } else {
-        display.println("NRF: TX FAIL");
+        display.printf("NRF:ERR WIFI:%s", (WiFi.status() == WL_CONNECTED) ? "OK" : "--");
       }
       display.display();
     }
